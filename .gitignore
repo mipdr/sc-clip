@@ -1,0 +1,21 @@
+# SuperCollider
+*.rtf
+*~
+*.swp
+*.swo
+.DS_Store
+
+# Session files
+*.scd~
+
+# Build artifacts
+build/
+*.o
+*.so
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log

@@ -1,0 +1,10 @@
+(
+	name: "sc-clip",
+	summary: "SuperCollider hardware clip-launcher / looper framework",
+	version: "0.1.0",
+	author: "sc-clip contributors",
+	helpdoc: "Help/SCClip.html",
+	url: "https://github.com/mipdr/sc-clip",
+	dependencies: ["ddwMixerChannel"],
+	isCompatible: { (Main.version.split($.).first.asInteger >= 3) and: (Main.version.split($.).at(1).asInteger >= 13) }
+)
