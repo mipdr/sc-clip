@@ -185,6 +185,19 @@ SCClip {
 		transport.useInternalClock;
 	}
 
+	// Metronome methods
+	enableMetronome { |amp = 0.3|
+		transport.enableMetronome(amp);
+	}
+
+	disableMetronome {
+		transport.disableMetronome;
+	}
+
+	setMetronomeVolume { |amp|
+		transport.setMetronomeVolume(amp);
+	}
+
 	// Query methods
 	printStatus {
 		grid.printStatus;

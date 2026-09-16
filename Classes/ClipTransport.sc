@@ -13,6 +13,9 @@ ClipTransport {
 	var <quantization;  // Quant object for launch/stop timing
 	var <syncMode;  // \internal, \link, or \midiclock
 	var <server;
+	var <metronomeEnabled;
+	var <metronomeTask;
+	var <metronomeAmp;
 
 	*new { |tempo = 120, beatsPerBar = 4, timeSignature, server|
 		^super.newCopyArgs(
@@ -22,7 +25,10 @@ ClipTransport {
 			timeSignature: timeSignature ? [4, 4],  // Default 4/4
 			quantization: nil,
 			syncMode: \internal,
-			server: server ? Server.default
+			server: server ? Server.default,
+			metronomeEnabled: false,
+			metronomeTask: nil,
+			metronomeAmp: 0.3
 		).init;
 	}
 
@@ -162,8 +168,61 @@ ClipTransport {
 		});
 	}
 
+	// Metronome control
+
+	enableMetronome { |amp = 0.3|
+		if (metronomeEnabled, {
+			"ClipTransport: Metronome already enabled".warn;
+			^this;
+		});
+
+		metronomeAmp = amp;
+		metronomeEnabled = true;
+
+		// Create task that triggers on every beat
+		metronomeTask = clock.schedAbs(clock.beats.ceil, {
+			var currentBeat = clock.beats;
+			var beatInBar = currentBeat % beatsPerBar;
+			var isDownbeat = (beatInBar < 0.01);  // First beat of bar
+
+			// Play click synth
+			Synth(\metronomeClick, [
+				\out, 0,
+				\isDownbeat, isDownbeat.asInteger,
+				\amp, metronomeAmp
+			]);
+
+			1;  // Reschedule every beat
+		});
+
+		"ClipTransport: Metronome enabled (amp: %)".format(amp).postln;
+	}
+
+	disableMetronome {
+		if (metronomeEnabled.not, {
+			"ClipTransport: Metronome already disabled".warn;
+			^this;
+		});
+
+		if (metronomeTask.notNil, {
+			clock.clear;  // Clear all scheduled events
+			// Reschedule the task as nil to stop it
+			metronomeTask = nil;
+		});
+
+		metronomeEnabled = false;
+
+		"ClipTransport: Metronome disabled".postln;
+	}
+
+	setMetronomeVolume { |amp|
+		metronomeAmp = amp;
+		"ClipTransport: Metronome volume set to %".format(amp).postln;
+	}
+
 	// Cleanup
 	free {
+		this.disableMetronome;
 		clock.stop;
 		clock.clear;
 	}

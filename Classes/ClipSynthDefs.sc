@@ -13,6 +13,7 @@ ClipSynthDefs {
 			this.addRecorderSynths;
 			this.addPlayerSynths;
 			this.addMasterEffects;
+			this.addMetronome;
 		};
 	}
 
@@ -121,6 +122,26 @@ ClipSynthDefs {
 			sig = Limiter.ar(sig, ceiling.dbamp, dur);
 
 			ReplaceOut.ar(outBus, sig);
+		}).add;
+
+	}
+
+	*addMetronome {
+
+		// Metronome click: downbeat (high pitch) vs regular beat (low pitch)
+		SynthDef(\metronomeClick, { |out=0, isDownbeat=0, amp=0.3|
+			var sig, env, freq;
+
+			// Downbeat: 1200 Hz, Regular beat: 800 Hz
+			freq = Select.kr(isDownbeat, [800, 1200]);
+
+			// Short click envelope
+			env = EnvGen.kr(Env.perc(0.001, 0.05), doneAction: Done.freeSelf);
+
+			// Simple sine click
+			sig = SinOsc.ar(freq) * env * amp;
+
+			Out.ar(out, sig ! 2);  // Stereo output
 		}).add;
 
 	}

@@ -61,42 +61,64 @@ For detailed setup (audio routing, MIDI configuration, latency tuning), see [SET
 
 ## Quick Start
 
+### Command-Line Testing (No MIDI Controller)
+
+Perfect for initial testing and development:
+
 ```supercollider
-// Boot server with recommended settings
+// 1. Boot server and initialize
 (
-s.options.memSize = 8192 * 16;        // 128 MB for loops
-s.options.numBuffers = 2048;
-s.options.blockSize = 128;            // ~3ms latency @ 48kHz
-s.options.numInputBusChannels = 8;    // 8 hardware inputs
-s.options.numOutputBusChannels = 2;   // Stereo out
-s.boot;
+s.options.memSize = 8192 * 16;
+s.options.numInputBusChannels = 4;
+s.options.numOutputBusChannels = 2;
+s.waitForBoot {
+	~clip = SCClip.new(numChannels: 4, numSlots: 8);
+	~clip.boot({
+		"SC-Clip ready!".postln;
+		~clip.enableMetronome(0.3);  // Enable click track
+	});
+};
 )
 
-// Initialize sc-clip with 8 channels, 8×8 grid
-~clip = SCClip.new(numChannels: 8, gridRows: 8, gridCols: 8);
+// 2. Set tempo and time signature
+~clip.setTempo(120);              // 120 BPM
+~clip.setTimeSignature(4, 4);     // 4/4 time
 
-// Set tempo
-~clip.transport.setTempo(120); // BPM
+// 3. Create test tone (simulates hardware synth)
+(
+~testTone = {
+	var freq = LFNoise1.kr(0.5).range(200, 800);
+	SinOsc.ar(freq) * 0.3;
+}.play;
+)
 
-// Connect MIDI controller (Launchpad example)
-~clip.setupMIDI(\launchpad, "Launchpad Mini");
+// 4. Record a loop (listens to metronome for timing!)
+~clip.armSlot(0, 0, 4);           // Arm channel 0, slot 0, 4 beats
+~clip.launchSlot(0, 0);           // Start recording on next bar
+// Wait 4 beats... loop will auto-play
 
-// Now use your controller:
-// - Press grid button: launch clip (quantized to bar)
-// - Hold Shift + Press: arm for recording
-// - Press again while playing: stop clip
+// 5. Control playback
+~clip.stopSlot(0, 0);             // Stop
+~clip.launchSlot(0, 0);           // Play again
+~clip.clearSlot(0, 0);            // Delete
 
-// Or control programmatically:
-~clip.grid.armSlot(channel: 0, slot: 0);      // Arm channel 0, slot 0
-~clip.grid.launchSlot(0, 0);                   // Start recording (quantized)
-// Play your hardware synth...
-~clip.grid.stopSlot(0, 0);                     // Stop recording, loop plays back
+// 6. Metronome controls
+~clip.enableMetronome(0.3);       // Enable (downbeat = high pitch)
+~clip.disableMetronome;           // Disable
+~clip.setMetronomeVolume(0.5);    // Adjust volume
 
-// Add per-channel effects
-~clip.grid.channels[0].addEffect(\reverb, [\room: 0.5, \mix: 0.3]);
+// 7. Mixing
+~clip.setChannelLevel(0, -6);     // Channel level (dB)
+~clip.setMasterLevel(-3);         // Master level (dB)
 
-// Adjust master level
-~clip.masterBus.setMasterLevel(-6); // dB
+// See Examples/00_command_line_test.scd for comprehensive guide!
+```
+
+### With MIDI Controller (Future)
+
+```supercollider
+// MIDI controller support coming in Phase 3
+// For now, use command-line methods above
 ```
 
 ## Architecture Overview
@@ -156,11 +178,12 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for full details.
 ## Examples
 
 See the `Examples/` directory:
-- `01_basic_setup.scd` — Manual control (no MIDI)
-- `02_launchpad_grid.scd` — Full Launchpad setup
-- `03_effects_chains.scd` — Per-channel FX demos
-- `04_link_sync.scd` — Ableton Link integration
-- `05_midi_clock.scd` — MIDI clock sync
+- `00_command_line_test.scd` — **Start here!** Complete command-line testing guide with metronome
+- `01_basic_setup.scd` — Comprehensive usage examples (recording, overdub, mixing, effects)
+- `02_launchpad_grid.scd` — Full Launchpad setup (coming in Phase 3)
+- `03_effects_chains.scd` — Per-channel FX demos (coming soon)
+- `04_link_sync.scd` — Ableton Link integration (coming soon)
+- `05_midi_clock.scd` — MIDI clock sync (coming soon)
 
 ## Documentation
 
