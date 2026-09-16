@@ -19,10 +19,15 @@ ClipSynthDefs {
 
 	*addInputMonitor {
 
-		// Input monitor: routes hardware input to mixer channel input
-		SynthDef(\inputMonitor, { |hardwareIn=0, mixerIn|
+		// Input monitor: routes hardware input to the mixer channel (for live
+		// monitoring) AND to the channel's dedicated recordBus (the clean,
+		// playback-free feed ClipSlot's recorder/overdub synths read from --
+		// mixerIn also carries whatever's currently playing back, which
+		// would double up in an overdub if the recorder read from there).
+		SynthDef(\inputMonitor, { |hardwareIn=0, mixerIn, recordBus|
 			var sig = SoundIn.ar(hardwareIn);
 			Out.ar(mixerIn, sig);
+			Out.ar(recordBus, sig);
 		}).add;
 
 	}

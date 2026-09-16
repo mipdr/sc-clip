@@ -18,15 +18,15 @@ ClipChannel {
 
 	*new { |channelIndex, numSlots = 8, transport, masterChannel, server|
 		^super.newCopyArgs(
-			channelIndex: channelIndex,
-			numSlots: numSlots,
-			slots: nil,
-			mixerChannel: nil,
-			inputBus: nil,
-			recorderGroup: nil,
-			looperGroup: nil,
-			transport: transport,
-			server: server ? Server.default
+			channelIndex,             // channelIndex
+			numSlots,                 // numSlots
+			nil,                      // slots
+			nil,                      // mixerChannel
+			nil,                      // inputBus
+			nil,                      // recorderGroup
+			nil,                      // looperGroup
+			transport,                // transport
+			server ? Server.default   // server
 		).init(masterChannel);
 	}
 
@@ -62,7 +62,9 @@ ClipChannel {
 		"ClipChannel[%]: Initialized with % slots".format(channelIndex, numSlots).postln;
 	}
 
-	// Create synth that routes hardware input to mixer channel input
+	// Create synth that routes hardware input to mixer channel input (live
+	// monitoring) and to this channel's dedicated inputBus (what ClipSlot's
+	// recorder/overdub synths actually read from)
 	createInputMonitor {
 		server.bind {
 			var hardwareInBus = channelIndex;  // Hardware input channel index
@@ -70,7 +72,8 @@ ClipChannel {
 
 			Synth(\inputMonitor, [
 				\hardwareIn, hardwareInBus,
-				\mixerIn, mixerInBus
+				\mixerIn, mixerInBus,
+				\recordBus, inputBus
 			], recorderGroup, \addToHead);
 		};
 	}

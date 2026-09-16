@@ -16,19 +16,25 @@ ClipTransport {
 	var <metronomeEnabled;
 	var <metronomeTask;
 	var <metronomeAmp;
+	var <midiClockEnabled;
+	var <midiClockOut;   // caller-supplied MIDIOut (e.g. MIDIOut.newByName(...)) -- keeps this class hardware-agnostic
+	var <midiClockTask;
 
 	*new { |tempo = 120, beatsPerBar = 4, timeSignature, server|
 		^super.newCopyArgs(
-			clock: nil,
-			tempo: tempo,
-			beatsPerBar: beatsPerBar,
-			timeSignature: timeSignature ? [4, 4],  // Default 4/4
-			quantization: nil,
-			syncMode: \internal,
-			server: server ? Server.default,
-			metronomeEnabled: false,
-			metronomeTask: nil,
-			metronomeAmp: 0.3
+			nil,                      // clock
+			tempo,                    // tempo
+			beatsPerBar,              // beatsPerBar
+			timeSignature ? [4, 4],   // timeSignature (default 4/4)
+			nil,                      // quantization
+			\internal,                // syncMode
+			server ? Server.default,  // server
+			false,                    // metronomeEnabled
+			nil,                      // metronomeTask
+			0.3,                      // metronomeAmp
+			false,                    // midiClockEnabled
+			nil,                      // midiClockOut
+			nil                       // midiClockTask
 		).init;
 	}
 
@@ -147,14 +153,50 @@ ClipTransport {
 		"ClipTransport: Switched to Ableton Link sync @ % BPM".format(tempo).postln;
 	}
 
-	// Enable MIDI clock output
-	enableMIDIClock { |port|
-		// TODO: Implement MIDI clock output
-		// This would send MIDI timing clock messages (24 ppq)
-		// and start/stop/continue messages
+	// Enable MIDI clock output: sends realtime Clock messages (0xF8, 24
+	// pulses per quarter note per the MIDI spec) out midiOut, following
+	// this transport's tempo -- for syncing external gear (drum machines,
+	// other sequencers) while SC-Clip runs standalone. midiOut is a
+	// caller-supplied MIDIOut (e.g. MIDIOut.newByName("your device", ...)),
+	// so this class doesn't need to know about any particular interface.
+	// This is MIDI clock OUTPUT (this transport as master) -- separate
+	// from syncMode/enableLink, which is about what drives this
+	// transport's own clock.
+	enableMIDIClock { |midiOut|
+		if (midiClockEnabled, {
+			"ClipTransport: MIDI clock already enabled".warn;
+			^this;
+		});
 
-		"ClipTransport: MIDI clock output not yet implemented".warn;
-		syncMode = \midiclock;
+		midiClockOut = midiOut;
+		midiClockEnabled = true;
+
+		midiClockTask = Routine({
+			loop {
+				midiClockOut.midiClock;
+				(1/24).wait;  // 24 clock pulses per quarter note
+			};
+		}).play(clock, quant: 1);
+
+		"ClipTransport: MIDI clock output enabled (24 ppqn)".postln;
+	}
+
+	// Stop MIDI clock output
+	disableMIDIClock {
+		if (midiClockEnabled.not, {
+			"ClipTransport: MIDI clock already disabled".warn;
+			^this;
+		});
+
+		if (midiClockTask.notNil, {
+			midiClockTask.stop;
+			midiClockTask = nil;
+		});
+
+		midiClockEnabled = false;
+		midiClockOut = nil;
+
+		"ClipTransport: MIDI clock output disabled".postln;
 	}
 
 	// Switch back to internal clock
@@ -180,20 +222,22 @@ ClipTransport {
 		metronomeEnabled = true;
 
 		// Create task that triggers on every beat
-		metronomeTask = clock.schedAbs(clock.beats.ceil, {
-			var currentBeat = clock.beats;
-			var beatInBar = currentBeat % beatsPerBar;
-			var isDownbeat = (beatInBar < 0.01);  // First beat of bar
+		metronomeTask = Routine({
+			loop {
+				var currentBeat = clock.beats;
+				var beatInBar = currentBeat % beatsPerBar;
+				var isDownbeat = (beatInBar < 0.01);  // First beat of bar
 
-			// Play click synth
-			Synth(\metronomeClick, [
-				\out, 0,
-				\isDownbeat, isDownbeat.asInteger,
-				\amp, metronomeAmp
-			]);
+				// Play click synth
+				Synth(\metronomeClick, [
+					\out, 0,
+					\isDownbeat, isDownbeat.asInteger,
+					\amp, metronomeAmp
+				]);
 
-			1;  // Reschedule every beat
-		});
+				1.wait;  // Every beat
+			};
+		}).play(clock, quant: 1);
 
 		"ClipTransport: Metronome enabled (amp: %)".format(amp).postln;
 	}
@@ -205,8 +249,8 @@ ClipTransport {
 		});
 
 		if (metronomeTask.notNil, {
-			clock.clear;  // Clear all scheduled events
-			// Reschedule the task as nil to stop it
+			metronomeTask.stop;  // Stop just this routine (not clock.clear -- that
+			// would also wipe MIDI clock output and any pending slot schedules)
 			metronomeTask = nil;
 		});
 
@@ -223,6 +267,7 @@ ClipTransport {
 	// Cleanup
 	free {
 		this.disableMetronome;
+		this.disableMIDIClock;
 		clock.stop;
 		clock.clear;
 	}

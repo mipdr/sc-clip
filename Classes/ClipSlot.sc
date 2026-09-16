@@ -20,15 +20,15 @@ ClipSlot {
 
 	*new { |channel, slotIndex|
 		^super.newCopyArgs(
-			state: \empty,
-			buffer: nil,
-			loopLengthBeats: nil,
-			loopLengthSamples: nil,
-			recorderSynth: nil,
-			playerSynth: nil,
-			channel: channel,
-			slotIndex: slotIndex,
-			server: channel.server
+			\empty,      // state
+			nil,         // buffer
+			nil,         // loopLengthBeats
+			nil,         // loopLengthSamples
+			nil,         // recorderSynth
+			nil,         // playerSynth
+			channel,     // channel
+			slotIndex,   // slotIndex
+			channel.server // server
 		);
 	}
 
@@ -216,12 +216,14 @@ ClipSlot {
 
 	// Start overdubbing (record + play simultaneously)
 	overdub {
+		var inputBus;
+
 		if (state != \playing, {
 			"ClipSlot: Cannot overdub - not playing".warn;
 			^this;
 		});
 
-		var inputBus = channel.inputBus;
+		inputBus = channel.inputBus;
 
 		"ClipSlot[%,%]: Starting overdub"
 			.format(channel.channelIndex, slotIndex)

@@ -89,6 +89,40 @@ s.waitForBoot {
 // Now you have audio going to "hardware input 0"
 
 // ============================================================================
+// PART 4B: RECORDING A REAL HARDWARE SYNTH (INSTEAD OF A TEST TONE)
+// ============================================================================
+
+// If you have a real synth (or any audio source) plugged into your audio
+// interface, you can record it directly -- no test tone needed. ClipChannel
+// already listens on its own hardware input (channelIndex N reads
+// SoundIn.ar(N)), so a channel is "live" as soon as SC-Clip boots, as long
+// as numInputBusChannels above covers it.
+
+// Example: a synth plugged into a Behringer UMC404HD's line input #1.
+// Interface inputs are usually labeled starting at 1, but SC's SoundIn.ar
+// bus indices start at 0 -- so physical input #1 is SC input index 0,
+// i.e. ClipChannel 0 (channelIndex 0 reads SoundIn.ar(0)). On Linux with
+// JACK, this is the order a typical jackd setup auto-connects in
+// (system:capture_1 -> scsynth's input bus 0); other OSes/drivers/routings
+// may number inputs differently, so if in doubt, check with the meter below
+// rather than assuming.
+
+// Confirm signal is actually arriving on the input you expect before
+// recording -- play/sing into the synth and watch for movement on input 0:
+s.meter;
+
+// No ~testTone needed this time -- channel 0 is already listening to
+// physical input #1 live. Arm and record it exactly like PART 5 below:
+~clip.armSlot(channelIndex: 0, slotIndex: 0, loopLengthBeats: 4);
+~clip.launchSlot(0, 0);  // starts recording on the next bar
+
+// Play your hardware synth into input #1 for 4 beats -- recording will
+// automatically switch to playback once the loop length is reached.
+
+~clip.printStatus;
+~clip.stopSlot(0, 0);
+
+// ============================================================================
 // PART 5: RECORDING YOUR FIRST LOOP
 // ============================================================================
 

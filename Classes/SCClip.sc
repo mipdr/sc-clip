@@ -15,12 +15,12 @@ SCClip {
 
 	*new { |numChannels = 4, numSlots = 8, server|
 		^super.newCopyArgs(
-			server: server ? Server.default,
-			transport: nil,
-			masterBus: nil,
-			grid: nil,
-			numChannels: numChannels,
-			numSlots: numSlots
+			server ? Server.default,  // server
+			nil,                      // transport
+			nil,                      // masterBus
+			nil,                      // grid
+			numChannels,              // numChannels
+			numSlots                  // numSlots
 		);
 	}
 
@@ -177,8 +177,12 @@ SCClip {
 		transport.enableLink;
 	}
 
-	enableMIDIClock { |port|
-		transport.enableMIDIClock(port);
+	enableMIDIClock { |midiOut|
+		transport.enableMIDIClock(midiOut);
+	}
+
+	disableMIDIClock {
+		transport.disableMIDIClock;
 	}
 
 	useInternalClock {

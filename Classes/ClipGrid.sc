@@ -15,12 +15,12 @@ ClipGrid {
 
 	*new { |numChannels = 4, numSlots = 8, transport, masterBus, server|
 		^super.newCopyArgs(
-			numChannels: numChannels,
-			numSlots: numSlots,
-			channels: nil,
-			transport: transport,
-			masterBus: masterBus,
-			server: server ? Server.default
+			numChannels,              // numChannels
+			numSlots,                 // numSlots
+			nil,                      // channels
+			transport,                // transport
+			masterBus,                // masterBus
+			server ? Server.default   // server
 		).init;
 	}
 
@@ -201,6 +201,8 @@ ClipGrid {
 
 	// Get grid status summary
 	printStatus {
+		var playing, recording;
+
 		"=== ClipGrid Status ===".postln;
 		"Tempo: % BPM, Time: %/%"
 			.format(
@@ -222,8 +224,8 @@ ClipGrid {
 			};
 		};
 
-		var playing = this.getAllPlayingSlots.size;
-		var recording = this.getAllRecordingSlots.size;
+		playing = this.getAllPlayingSlots.size;
+		recording = this.getAllRecordingSlots.size;
 		"".postln;
 		"Playing: %, Recording: %".format(playing, recording).postln;
 		"======================".postln;

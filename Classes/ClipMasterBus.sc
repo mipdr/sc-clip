@@ -15,12 +15,12 @@ ClipMasterBus {
 
 	*new { |server|
 		^super.newCopyArgs(
-			mixerChannel: nil,
-			masterGroup: nil,
-			server: server ? Server.default,
-			eqSynth: nil,
-			compSynth: nil,
-			limiterSynth: nil
+			nil,                      // mixerChannel
+			nil,                      // masterGroup
+			server ? Server.default,  // server
+			nil,                      // eqSynth
+			nil,                      // compSynth
+			nil                       // limiterSynth
 		).init;
 	}
 
