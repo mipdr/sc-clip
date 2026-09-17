@@ -15,6 +15,7 @@ ClipChannel {
 	var <looperGroup;  // Group for player synths
 	var <transport;  // ClipTransport reference
 	var <server;
+	var <effects;  // IdentityDictionary: slot -> running effect instance (from mixerChannel.playfx)
 
 	*new { |channelIndex, numSlots = 8, transport, masterChannel, server|
 		^super.newCopyArgs(
@@ -26,11 +27,14 @@ ClipChannel {
 			nil,                      // recorderGroup
 			nil,                      // looperGroup
 			transport,                // transport
-			server ? Server.default   // server
+			server ? Server.default,  // server
+			nil                       // effects
 		).init(masterChannel);
 	}
 
 	init { |masterChannel|
+		effects = IdentityDictionary.new;
+
 		// Create node groups for this channel
 		server.bind {
 			recorderGroup = Group.new(server);
@@ -182,20 +186,40 @@ ClipChannel {
 		mixerChannel.unMute;
 	}
 
-	// Effects management (using MixerChannel's effects slots)
+	// Effects management. ddwMixerChannel itself has no slot concept -- it just
+	// serially chains whatever's playfx'd into its effectgroup (each one
+	// ReplaceOut's the channel's inbus in the order added). We layer a slot
+	// index on top so callers (e.g. a MIDI controller mapping) can reference
+	// "the effect in slot N" without holding onto the Synth themselves.
 
-	addEffect { |synthDef, args, slot|
-		// Use MixerChannel's playFx method to add an effect
-		// slot: optional effect slot number (0-3 typically)
-		mixerChannel.playFx(synthDef, args, slot);
+	addEffect { |synthDef, args, slot = 0|
+		if (effects[slot].notNil, { this.removeEffect(slot) });
+		effects[slot] = mixerChannel.playfx(synthDef, args);
 
 		"ClipChannel[%]: Added effect % at slot %".format(channelIndex, synthDef, slot).postln;
 	}
 
 	removeEffect { |slot|
-		mixerChannel.stopFx(slot);
+		var running = effects[slot];
+		if (running.notNil, {
+			running.free;
+			effects.removeAt(slot);
+			"ClipChannel[%]: Removed effect at slot %".format(channelIndex, slot).postln;
+		});
+	}
 
-		"ClipChannel[%]: Removed effect at slot %".format(channelIndex, slot).postln;
+	// Live-update a running effect's parameter (e.g. from a MIDI CC handler)
+	setEffectParam { |slot, param, value|
+		var running = effects[slot];
+		if (running.notNil, {
+			running.set(param, value);
+		}, {
+			"ClipChannel[%]: No effect at slot % to set % on".format(channelIndex, slot, param).warn;
+		});
+	}
+
+	getEffect { |slot|
+		^effects[slot];
 	}
 
 	// Callback when a slot changes state (for LED updates, etc.)
@@ -223,6 +247,7 @@ ClipChannel {
 
 	free {
 		slots.do(_.free);
+		effects.do(_.free);
 		mixerChannel.free;
 		recorderGroup.free;
 		looperGroup.free;

@@ -39,18 +39,23 @@ ClipSlot {
 			^this;
 		});
 
+		// Re-arming a slot that already has a buffer (recording over/
+		// replacing previous material): loopLengthBeats/Samples were fixed
+		// at the FIRST arm and must not change now -- the buffer itself is
+		// never reallocated, so accepting a new lengthBeats here (e.g. the
+		// caller's default) would desync the recording window from the
+		// buffer's actual size, recording over only part of it.
+		if (buffer.notNil, {
+			this.setState(\armed);
+			^this;
+		});
+
 		loopLengthBeats = lengthBeats;
 
 		// Calculate loop length in samples (ONCE - never recalculate!)
 		loopLengthSamples = this.calculateLoopLengthSamples(lengthBeats);
 
-		// If buffer doesn't exist, allocate it (async)
-		if (buffer.isNil, {
-			this.allocateBuffer;
-		}, {
-			// Buffer exists, can arm immediately
-			this.setState(\armed);
-		});
+		this.allocateBuffer;
 	}
 
 	// Calculate loop length in samples based on current tempo
