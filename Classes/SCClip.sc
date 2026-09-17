@@ -228,4 +228,353 @@ SCClip {
 		this.shutdown;
 	}
 
+	// ===== Session Saving/Loading =====
+
+	/*
+	 * Save session to disk using SuperCollider's idiomatic approach:
+	 * - Session metadata (tempo, mixer settings, clip states) → .scd file via Dictionary.writeArchive
+	 * - Audio buffers → .wav files via Buffer.write
+	 *
+	 * Directory structure:
+	 * <path>/
+	 *   session.scd          # Metadata dictionary
+	 *   channel_0_slot_0.wav # Audio buffers (only for non-empty slots)
+	 *   channel_0_slot_1.wav
+	 *   ...
+	 */
+
+	// Save session to a new location
+	saveAs { |path, action|
+		var sessionDir = PathName(path);
+		var metadataPath = sessionDir.fullPath +/+ "session.scd";
+		var sessionData;
+
+		// Validate path
+		if (path.isNil or: { path.isEmpty }, {
+			"SCClip.saveAs: Invalid path".error;
+			^this;
+		});
+
+		// Create directory if it doesn't exist
+		File.mkdir(sessionDir.fullPath);
+
+		"SCClip: Saving session to '%'...".format(path).postln;
+
+		// Collect all session metadata
+		sessionData = this.collectSessionData;
+
+		// Write metadata to .scd file
+		sessionData.writeArchive(metadataPath);
+		"SCClip: Wrote metadata to '%'".format(metadataPath).postln;
+
+		// Export audio buffers asynchronously
+		this.exportAudioBuffers(sessionDir.fullPath, {
+			"SCClip: Session saved successfully to '%'".format(path).postln;
+			action.value(this);
+		});
+	}
+
+	// Collect all session state into a Dictionary
+	collectSessionData {
+		var data = Dictionary.new;
+
+		// Transport settings
+		data[\transport] = Dictionary[
+			\tempo -> transport.tempo,
+			\beatsPerBar -> transport.beatsPerBar,
+			\timeSignature -> transport.timeSignature,
+			\quantization -> if (transport.quantization == 0, {
+				0
+			}, {
+				transport.quantization.quant
+			}),
+			\syncMode -> transport.syncMode,
+			\metronomeEnabled -> transport.metronomeEnabled,
+			\metronomeAmp -> transport.metronomeAmp
+		];
+
+		// Master bus settings
+		data[\master] = Dictionary[
+			\level -> masterBus.mixerChannel.level,
+			\hasMasteringChain -> masterBus.eqSynth.notNil
+		];
+
+		// Master EQ settings (if active)
+		if (masterBus.eqSynth.notNil, {
+			data[\masterEQ] = Dictionary[
+				\loFreq -> 80,   // Store current values if accessible
+				\loGain -> 0,
+				\midFreq -> 1000,
+				\midGain -> 0,
+				\midQ -> 1,
+				\hiFreq -> 8000,
+				\hiGain -> 0
+			];
+		});
+
+		// Master compressor settings (if active)
+		if (masterBus.compSynth.notNil, {
+			data[\masterComp] = Dictionary[
+				\thresh -> -12,
+				\ratio -> 3,
+				\attack -> 0.01,
+				\release -> 0.3,
+				\makeupGain -> 0
+			];
+		});
+
+		// Master limiter settings (if active)
+		if (masterBus.limiterSynth.notNil, {
+			data[\masterLimiter] = Dictionary[
+				\ceiling -> -0.3,
+				\dur -> 0.01
+			];
+		});
+
+		// Grid configuration
+		data[\grid] = Dictionary[
+			\numChannels -> numChannels,
+			\numSlots -> numSlots
+		];
+
+		// Channel and slot data
+		data[\channels] = grid.channels.collect { |channel, chanIdx|
+			Dictionary[
+				\level -> channel.mixerChannel.level,
+				\pan -> channel.mixerChannel.pan,
+				\isMuted -> channel.mixerChannel.muted,
+				\isSoloed -> channel.mixerChannel.soloed,
+				\slots -> channel.slots.collect { |slot, slotIdx|
+					if (slot.hasAudio, {
+						Dictionary[
+							\hasAudio -> true,
+							\loopLengthBeats -> slot.loopLengthBeats,
+							\loopLengthSamples -> slot.loopLengthSamples,
+							\state -> slot.state,
+							\audioFile -> "channel_%_slot_%.wav".format(chanIdx, slotIdx)
+						]
+					}, {
+						Dictionary[\hasAudio -> false]
+					})
+				}
+			]
+		};
+
+		^data;
+	}
+
+	// Export all audio buffers to .wav files
+	exportAudioBuffers { |dirPath, completionAction|
+		var bufferExports = List.new;
+		var exportCount = 0;
+		var totalExports = 0;
+
+		// Count how many buffers need exporting
+		grid.channels.do { |channel, chanIdx|
+			channel.slots.do { |slot, slotIdx|
+				if (slot.hasAudio, {
+					totalExports = totalExports + 1;
+				});
+			};
+		};
+
+		if (totalExports == 0, {
+			"SCClip: No audio buffers to export".postln;
+			completionAction.value;
+			^this;
+		});
+
+		// Export each buffer
+		grid.channels.do { |channel, chanIdx|
+			channel.slots.do { |slot, slotIdx|
+				if (slot.hasAudio, {
+					var fileName = "channel_%_slot_%.wav".format(chanIdx, slotIdx);
+					var filePath = dirPath +/+ fileName;
+
+					slot.buffer.write(
+						path: filePath,
+						headerFormat: "wav",
+						sampleFormat: "float",
+						numFrames: slot.loopLengthSamples,
+						completionMessage: {
+							exportCount = exportCount + 1;
+							"SCClip: Exported % (%/%)".format(fileName, exportCount, totalExports).postln;
+
+							// Call completion action when all exports are done
+							if (exportCount == totalExports, {
+								completionAction.value;
+							});
+						}
+					);
+				});
+			};
+		};
+	}
+
+	// Load session from disk
+	*load { |path, server, action|
+		var sessionDir = PathName(path);
+		var metadataPath = sessionDir.fullPath +/+ "session.scd";
+		var sessionData;
+		var scclip;
+
+		// Validate path
+		if (File.exists(metadataPath).not, {
+			"SCClip.load: Session file not found at '%'".format(metadataPath).error;
+			^nil;
+		});
+
+		"SCClip: Loading session from '%'...".format(path).postln;
+
+		// Read metadata
+		sessionData = Object.readArchive(metadataPath);
+
+		if (sessionData.isNil, {
+			"SCClip.load: Failed to read session metadata from '%'".format(metadataPath).error;
+			^nil;
+		});
+
+		// Create new SCClip instance with saved grid dimensions
+		scclip = SCClip.new(
+			numChannels: sessionData[\grid][\numChannels],
+			numSlots: sessionData[\grid][\numSlots],
+			server: server
+		);
+
+		// Boot and initialize with saved settings
+		scclip.boot(action: {
+			scclip.restoreSessionData(sessionData, sessionDir.fullPath, action);
+		});
+
+		^scclip;
+	}
+
+	// Restore session data after boot
+	restoreSessionData { |sessionData, dirPath, completionAction|
+		"SCClip: Restoring session state...".postln;
+
+		// Restore transport settings
+		this.setTempo(sessionData[\transport][\tempo]);
+		this.setTimeSignature(
+			sessionData[\transport][\timeSignature][0],
+			sessionData[\transport][\timeSignature][1]
+		);
+
+		if (sessionData[\transport][\quantization] == 0, {
+			this.setQuantization(0);
+		}, {
+			this.setQuantization(sessionData[\transport][\quantization]);
+		});
+
+		// Restore metronome state
+		if (sessionData[\transport][\metronomeEnabled], {
+			this.enableMetronome(sessionData[\transport][\metronomeAmp]);
+		});
+
+		// Restore master level
+		this.setMasterLevel(sessionData[\master][\level].ampdb);
+
+		// Restore mastering chain settings if they were active
+		if (sessionData[\masterEQ].notNil, {
+			var eq = sessionData[\masterEQ];
+			this.setMasterEQ(
+				eq[\loFreq], eq[\loGain],
+				eq[\midFreq], eq[\midGain], eq[\midQ],
+				eq[\hiFreq], eq[\hiGain]
+			);
+		});
+
+		if (sessionData[\masterComp].notNil, {
+			var comp = sessionData[\masterComp];
+			this.setMasterCompressor(
+				comp[\thresh], comp[\ratio],
+				comp[\attack], comp[\release],
+				comp[\makeupGain]
+			);
+		});
+
+		if (sessionData[\masterLimiter].notNil, {
+			var lim = sessionData[\masterLimiter];
+			this.setMasterLimiter(lim[\ceiling], lim[\dur]);
+		});
+
+		// Restore channels and slots (including audio buffers)
+		this.restoreChannelsAndSlots(sessionData[\channels], dirPath, completionAction);
+	}
+
+	// Restore channel mixer settings and slot audio
+	restoreChannelsAndSlots { |channelsData, dirPath, completionAction|
+		var loadCount = 0;
+		var totalLoads = 0;
+
+		// Count how many buffers need loading
+		channelsData.do { |channelData|
+			channelData[\slots].do { |slotData|
+				if (slotData[\hasAudio], {
+					totalLoads = totalLoads + 1;
+				});
+			};
+		};
+
+		if (totalLoads == 0, {
+			"SCClip: No audio buffers to load".postln;
+			completionAction.value(this);
+			^this;
+		});
+
+		// Restore each channel
+		channelsData.do { |channelData, chanIdx|
+			var channel = grid.getChannel(chanIdx);
+
+			// Restore mixer settings
+			channel.setLevel(channelData[\level].ampdb);
+			channel.setPan(channelData[\pan]);
+
+			if (channelData[\isMuted], { channel.mute });
+			if (channelData[\isSoloed], { channel.solo });
+
+			// Restore slots
+			channelData[\slots].do { |slotData, slotIdx|
+				if (slotData[\hasAudio], {
+					var slot = channel.getSlot(slotIdx);
+					var audioPath = dirPath +/+ slotData[\audioFile];
+
+					"SCClip: Loading %...".format(slotData[\audioFile]).postln;
+
+					// Load buffer from disk
+					Buffer.read(
+						server: server,
+						path: audioPath,
+						action: { |buf|
+							// Restore slot state
+							slot.buffer = buf;
+							slot.loopLengthBeats = slotData[\loopLengthBeats];
+							slot.loopLengthSamples = slotData[\loopLengthSamples];
+
+							// Set slot state (typically \stopped for saved clips)
+							if (slotData[\state] == \playing, {
+								slot.setState(\stopped);  // Don't auto-play on load
+							}, {
+								slot.setState(slotData[\state]);
+							});
+
+							loadCount = loadCount + 1;
+							"SCClip: Loaded % (%/%)".format(
+								slotData[\audioFile],
+								loadCount,
+								totalLoads
+							).postln;
+
+							// Call completion action when all loads are done
+							if (loadCount == totalLoads, {
+								"SCClip: Session loaded successfully".postln;
+								completionAction.value(this);
+							});
+						}
+					);
+				});
+			};
+		};
+	}
+
 }
