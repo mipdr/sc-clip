@@ -147,6 +147,10 @@ SCClip {
 		grid.soloChannel(channelIndex);
 	}
 
+	unSoloChannel { |channelIndex|
+		grid.unSoloChannel(channelIndex);
+	}
+
 	muteChannel { |channelIndex|
 		grid.muteChannel(channelIndex);
 	}
@@ -343,7 +347,7 @@ SCClip {
 				\level -> channel.mixerChannel.level,
 				\pan -> channel.mixerChannel.pan,
 				\isMuted -> channel.mixerChannel.muted,
-				\isSoloed -> channel.mixerChannel.soloed,
+				\isSoloed -> channel.isSoloed,
 				\slots -> channel.slots.collect { |slot, slotIdx|
 					if (slot.hasAudio, {
 						Dictionary[
@@ -365,8 +369,6 @@ SCClip {
 
 	// Export all audio buffers to .wav files
 	exportAudioBuffers { |dirPath, completionAction|
-		var bufferExports = List.new;
-		var exportCount = 0;
 		var totalExports = 0;
 
 		// Count how many buffers need exporting
@@ -384,31 +386,38 @@ SCClip {
 			^this;
 		});
 
-		// Export each buffer
-		grid.channels.do { |channel, chanIdx|
-			channel.slots.do { |slot, slotIdx|
-				if (slot.hasAudio, {
-					var fileName = "channel_%_slot_%.wav".format(chanIdx, slotIdx);
-					var filePath = dirPath +/+ fileName;
+		// Buffer.write's completionMessage is built and evaluated on the
+		// CLIENT right away, to become the OSC message bytes sent alongside
+		// /b_write -- it is not a callback the server invokes once the write
+		// actually finishes (that's only true of Buffer.read/alloc's `action`).
+		// So completion here can't be tracked by counting inside it; instead,
+		// queue all the writes, then use server.sync (inside a Routine, since
+		// it yields) to wait until scsynth has actually processed every
+		// queued command before declaring the export done.
+		Routine {
+			grid.channels.do { |channel, chanIdx|
+				channel.slots.do { |slot, slotIdx|
+					if (slot.hasAudio, {
+						var fileName = "channel_%_slot_%.wav".format(chanIdx, slotIdx);
+						var filePath = dirPath +/+ fileName;
 
-					slot.buffer.write(
-						path: filePath,
-						headerFormat: "wav",
-						sampleFormat: "float",
-						numFrames: slot.loopLengthSamples,
-						completionMessage: {
-							exportCount = exportCount + 1;
-							"SCClip: Exported % (%/%)".format(fileName, exportCount, totalExports).postln;
+						slot.buffer.write(
+							path: filePath,
+							headerFormat: "wav",
+							sampleFormat: "float",
+							numFrames: slot.loopLengthSamples
+						);
 
-							// Call completion action when all exports are done
-							if (exportCount == totalExports, {
-								completionAction.value;
-							});
-						}
-					);
-				});
+						"SCClip: Queued export of %".format(fileName).postln;
+					});
+				};
 			};
-		};
+
+			server.sync;
+
+			"SCClip: All % audio buffer(s) written".format(totalExports).postln;
+			completionAction.value;
+		}.play;
 	}
 
 	// Load session from disk
@@ -506,6 +515,7 @@ SCClip {
 	restoreChannelsAndSlots { |channelsData, dirPath, completionAction|
 		var loadCount = 0;
 		var totalLoads = 0;
+		var soloedChanIdx = nil;
 
 		// Count how many buffers need loading
 		channelsData.do { |channelData|
@@ -516,24 +526,35 @@ SCClip {
 			};
 		};
 
+		// Restore mixer settings for every channel up front -- this must not
+		// be skipped when there's no audio to load (e.g. a session saved
+		// before anything was recorded still has level/pan/mute/solo to
+		// restore).
+		channelsData.do { |channelData, chanIdx|
+			var channel = grid.getChannel(chanIdx);
+
+			channel.setLevel(channelData[\level].ampdb);
+			channel.setPan(channelData[\pan]);
+
+			if (channelData[\isMuted], { channel.mute });
+			if (channelData[\isSoloed], { soloedChanIdx = chanIdx });
+		};
+
+		// Solo is cross-channel (mutes every other channel); apply it once,
+		// after every channel's own mute state above, so it takes the same
+		// precedence it had when the session was saved.
+		if (soloedChanIdx.notNil, { grid.soloChannel(soloedChanIdx) });
+
 		if (totalLoads == 0, {
 			"SCClip: No audio buffers to load".postln;
 			completionAction.value(this);
 			^this;
 		});
 
-		// Restore each channel
+		// Restore slot audio
 		channelsData.do { |channelData, chanIdx|
 			var channel = grid.getChannel(chanIdx);
 
-			// Restore mixer settings
-			channel.setLevel(channelData[\level].ampdb);
-			channel.setPan(channelData[\pan]);
-
-			if (channelData[\isMuted], { channel.mute });
-			if (channelData[\isSoloed], { channel.solo });
-
-			// Restore slots
 			channelData[\slots].do { |slotData, slotIdx|
 				if (slotData[\hasAudio], {
 					var slot = channel.getSlot(slotIdx);

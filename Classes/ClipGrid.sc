@@ -149,10 +149,32 @@ ClipGrid {
 		});
 	}
 
+	// Solos one channel: mutes every other channel and marks this one soloed.
+	// ddwMixerChannel has no native solo bus, so it's implemented here as
+	// plain cross-channel muting.
 	soloChannel { |channelIndex|
 		var channel = this.getChannel(channelIndex);
 		if (channel.notNil, {
-			channel.solo;
+			channels.do { |ch, i|
+				if (i == channelIndex, {
+					ch.solo;
+					ch.unMute;
+				}, {
+					ch.unSolo;
+					ch.mute;
+				});
+			};
+		});
+	}
+
+	// Undoes soloChannel: clears solo and unmutes every channel.
+	unSoloChannel { |channelIndex|
+		var channel = this.getChannel(channelIndex);
+		if (channel.notNil, {
+			channels.do { |ch|
+				ch.unSolo;
+				ch.unMute;
+			};
 		});
 	}
 

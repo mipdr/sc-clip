@@ -9,9 +9,9 @@
 
 ClipSlot {
 	var <state;
-	var <buffer;
-	var <loopLengthBeats;
-	var <loopLengthSamples;  // Computed once, never recalculated (prevents drift)
+	var <>buffer;
+	var <>loopLengthBeats;
+	var <>loopLengthSamples;  // Computed once, never recalculated (prevents drift)
 	var <recorderSynth;
 	var <playerSynth;
 	var <channel;  // Parent ClipChannel

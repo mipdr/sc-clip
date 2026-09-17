@@ -16,6 +16,8 @@ ClipChannel {
 	var <transport;  // ClipTransport reference
 	var <server;
 	var <effects;  // IdentityDictionary: slot -> running effect instance (from mixerChannel.playfx)
+	var <isSoloed;  // ddwMixerChannel has no solo concept -- tracked here; actual
+	                // cross-channel silencing is done by ClipGrid:soloChannel/unSoloChannel
 
 	*new { |channelIndex, numSlots = 8, transport, masterChannel, server|
 		^super.newCopyArgs(
@@ -28,7 +30,8 @@ ClipChannel {
 			nil,                      // looperGroup
 			transport,                // transport
 			server ? Server.default,  // server
-			nil                       // effects
+			nil,                      // effects
+			false                     // isSoloed
 		).init(masterChannel);
 	}
 
@@ -170,20 +173,22 @@ ClipChannel {
 		mixerChannel.pan_(position);
 	}
 
+	// ddwMixerChannel has no solo support; this just tracks the flag.
+	// Use ClipGrid:soloChannel/unSoloChannel for the actual audible effect.
 	solo {
-		mixerChannel.solo;
+		isSoloed = true;
 	}
 
 	unSolo {
-		mixerChannel.unSolo;
+		isSoloed = false;
 	}
 
 	mute {
-		mixerChannel.mute;
+		mixerChannel.mute(true);
 	}
 
 	unMute {
-		mixerChannel.unMute;
+		mixerChannel.mute(false);
 	}
 
 	// Effects management. ddwMixerChannel itself has no slot concept -- it just

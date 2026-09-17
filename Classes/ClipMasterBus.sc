@@ -148,11 +148,10 @@ ClipMasterBus {
 
 	// Bypass mastering (mute/unmute master)
 	bypass { |bool = true|
+		mixerChannel.mute(bool);
 		if (bool, {
-			mixerChannel.mute;
 			"ClipMasterBus: Bypassed (muted)".postln;
 		}, {
-			mixerChannel.unMute;
 			"ClipMasterBus: Un-bypassed (unmuted)".postln;
 		});
 	}

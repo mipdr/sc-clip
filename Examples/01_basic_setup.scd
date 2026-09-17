@@ -108,8 +108,8 @@ s.waitForBoot {
 ~clip.setChannelPan(1, 0.5);      // Pan channel 1 right
 
 // Solo/mute
-~clip.soloChannel(0);              // Solo channel 0
-~clip.grid.channels[0].unSolo;     // Un-solo
+~clip.soloChannel(0);               // Solo channel 0
+~clip.unSoloChannel(0);             // Un-solo
 
 ~clip.muteChannel(1);              // Mute channel 1
 ~clip.grid.channels[1].unMute;     // Un-mute
