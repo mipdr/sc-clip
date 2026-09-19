@@ -222,6 +222,6 @@ The critical `loopLengthSamples` field is saved and restored exactly. This preve
 
 ## See Also
 
-- [examples/session_save_load_test.scd](../examples/session_save_load_test.scd) - Complete test script
+- [Examples/session_save_load_test.scd](../Examples/session_save_load_test.scd) - Complete test script
 - [SuperCollider Archive documentation](https://doc.sccode.org/Classes/Archive.html)
 - [Buffer.write documentation](https://doc.sccode.org/Classes/Buffer.html#-write)

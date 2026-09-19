@@ -37,6 +37,11 @@ This is **not a synthesizer** — it's a performance looper for hardware. Think 
 - ✅ Ableton Link support (sync with Live, other apps)
 - ✅ MIDI clock output (sync hardware sequencers)
 
+### Session Management
+- ✅ Save and load complete sessions (audio + settings)
+- ✅ Export clips as high-quality .wav files
+- ✅ Human-readable session metadata (.scd format)
+
 ## Requirements
 
 - **SuperCollider** 3.13 or later
@@ -161,7 +166,7 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for full details.
 ### Simplicity Over Features
 - No in-SC synthesis (use your hardware!)
 - No GUI (use your MIDI controller!)
-- No session save/load (phase 2 maybe)
+- Session save/load with human-readable metadata
 - Focus: rock-solid looping and timing
 
 ### Leverage Existing Tools
@@ -180,6 +185,7 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for full details.
 See the `Examples/` directory:
 - `00_command_line_test.scd` — **Start here!** Complete command-line testing guide with metronome
 - `01_basic_setup.scd` — Comprehensive usage examples (recording, overdub, mixing, effects)
+- `session_save_load_test.scd` — Session save/load demonstration
 - `02_launchpad_grid.scd` — Full Launchpad setup (coming in Phase 3)
 - `03_effects_chains.scd` — Per-channel FX demos (coming soon)
 - `04_link_sync.scd` — Ableton Link integration (coming soon)
@@ -189,6 +195,7 @@ See the `Examples/` directory:
 
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Complete architecture and design decisions
 - [SETUP.md](SETUP.md) — Installation, audio routing, MIDI setup
+- [docs/session_saving.md](docs/session_saving.md) — Session save/load feature guide
 - `HelpSource/` — SC help files for each class
 
 ## Contributing

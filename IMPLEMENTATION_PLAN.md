@@ -794,12 +794,16 @@ Total perceived latency: ~200-205ms for quantized launches
 
 ---
 
-## Future Extensions (Out of Scope for Phase 1)
+## Implemented Extensions
 
-### Session Save/Load
-- Save clip grid state to disk
-- Store buffer contents as audio files
-- Reload session on startup
+### Session Save/Load ✅
+- ✅ Save clip grid state to disk
+- ✅ Store buffer contents as audio files (.wav format)
+- ✅ Reload session on startup
+- ✅ Human-readable metadata (.scd format)
+- See [docs/session_saving.md](docs/session_saving.md) for details
+
+## Future Extensions
 
 ### Clip Warping
 - Time-stretch loops to match tempo changes
