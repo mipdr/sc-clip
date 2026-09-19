@@ -198,6 +198,40 @@ See the `Examples/` directory:
 - [docs/session_saving.md](docs/session_saving.md) — Session save/load feature guide
 - `HelpSource/` — SC help files for each class
 
+## Future Extensions
+
+The following features are planned for future development:
+
+### Clip Warping
+- Time-stretch loops to match tempo changes
+- Pitch-shift independent of tempo
+- Beat-matching for imported audio
+
+### Scene Launch
+- Launch entire rows/columns of clips simultaneously
+- Crossfade between scenes with configurable fade times
+- Scene automation and sequencing
+
+### Advanced Effects
+- Per-clip effects (independent of channel effects)
+- Effects automation via envelopes and LFOs
+- Sidechain compression between clips
+- Effects presets library
+
+### Multi-User Sync
+- Multiple sc-clip instances linked via Ableton Link
+- Distributed performance setup across multiple machines
+- Networked collaboration features
+
+### Performance Enhancements
+- GUI for visual feedback (optional)
+- Additional controller support (APC40, Push, Maschine, etc.)
+- MIDI mapping customization interface
+- Clip color coding and organization
+- Undo/redo functionality
+
+See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed architecture notes on future extensions.
+
 ## Contributing
 
 This is a performance instrument under active development. Contributions welcome, especially:
