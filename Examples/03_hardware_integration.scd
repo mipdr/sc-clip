@@ -67,11 +67,26 @@
 	c;
 };
 
-// Wait for boot, then connect TR-8S
+// Wait for boot, then set up effects and connect TR-8S
 fork {
 	s.sync;  // Wait for server
 
-	// Create and connect TR-8S controller
+	// First, add effects to the channels
+	// The TR-8S controller will map to these effects, not create them
+	4.do { |chanIdx|
+		var channel = ~clip.grid.getChannel(chanIdx);
+
+		// Effect slot 0: Reverb (will be controlled by CTRL knob)
+		channel.addEffect(\channelReverb, [\mix, 0.3, \room, 0.5, \damp, 0.5], slot: 0);
+
+		// Effect slot 1: Delay (will be controlled by DECAY knob)
+		channel.addEffect(\channelDelay, [\mix, 0.0, \delayTime, 0.3, \decayTime, 2], slot: 1);
+
+		// Effect slot 2: Distortion (will be controlled by TUNE knob)
+		channel.addEffect(\channelDistortion, [\mix, 0.0, \drive, 0.5], slot: 2);
+	};
+
+	// Now connect TR-8S controller to map its knobs to the effects
 	~tr8s = ClipTR8s.new(~clip);
 	~tr8s.connect;
 
@@ -84,9 +99,9 @@ fork {
 	 *
 	 * Each track's controls:
 	 *   - LEVEL fader -> channel level (dB)
-	 *   - CTRL knob   -> reverb mix (effect slot 0)
-	 *   - DECAY knob  -> delay mix (effect slot 1)
-	 *   - TUNE knob   -> distortion mix (effect slot 2)
+	 *   - CTRL knob   -> effect slot 0, \mix parameter
+	 *   - DECAY knob  -> effect slot 1, \mix parameter
+	 *   - TUNE knob   -> effect slot 2, \mix parameter
 	 */
 };
 )
@@ -104,6 +119,19 @@ fork {
 ~clip.boot(action: {
 	~clip.setTempo(128);
 
+	// Add effects to channels
+	4.do { |chanIdx|
+		var channel = ~clip.grid.getChannel(chanIdx);
+
+		// Effect slot 0: Reverb with custom settings
+		channel.addEffect(\channelReverb, [\mix, 0.5, \room, 0.7, \damp, 0.3], slot: 0);
+
+		// Effect slot 1: Delay with custom settings
+		channel.addEffect(\channelDelay, [\mix, 0.2, \delayTime, 0.25, \decayTime, 3], slot: 1);
+
+		// Slot 2: No effect - TUNE knob won't do anything
+	};
+
 	// Create TR-8S controller
 	~tr8s = ClipTR8s.new(~clip);
 
@@ -115,25 +143,13 @@ fork {
 		rcChannel: 1   // RC track -> channel 1
 	);
 
-	// Customize effects chain
-	~tr8s.setEffectsChain([
-		// Effect slot 0: Reverb (CTRL knob)
-		(
-			synthDef: \channelReverb,
-			params: [\mix, 0.5, \room, 0.7, \damp, 0.3],
-			slot: 0,
-			controlParam: \mix,
-			controlRange: [0.0, 1.0]
-		),
-		// Effect slot 1: Delay (DECAY knob)
-		(
-			synthDef: \channelDelay,
-			params: [\mix, 0.2, \delayTime, 0.25, \decayTime, 3],
-			slot: 1,
-			controlParam: \mix,
-			controlRange: [0.0, 1.0]
-		)
-		// Slot 2 omitted - TUNE knob won't do anything
+	// Customize knob mapping to control different parameters
+	~tr8s.setKnobMapping([
+		// CTRL knob -> reverb \room parameter instead of \mix
+		(knob: \ctrl, slot: 0, param: \room, range: [0.0, 1.0]),
+		// DECAY knob -> delay \decayTime parameter
+		(knob: \decay, slot: 1, param: \decayTime, range: [1.0, 5.0]),
+		// TUNE knob -> not mapped (no effect in slot 2)
 	]);
 
 	// Connect with custom configuration
@@ -204,6 +220,14 @@ fork {
 		if (~midiOut.notNil, {
 			~clip.enableMIDIClock(~midiOut);
 		});
+
+		// Add effects to channels before connecting TR-8S
+		4.do { |chanIdx|
+			var channel = ~clip.grid.getChannel(chanIdx);
+			channel.addEffect(\channelReverb, [\mix, 0.3, \room, 0.5, \damp, 0.5], slot: 0);
+			channel.addEffect(\channelDelay, [\mix, 0.0, \delayTime, 0.3, \decayTime, 2], slot: 1);
+			channel.addEffect(\channelDistortion, [\mix, 0.0, \drive, 0.5], slot: 2);
+		};
 
 		// Set up TR-8S controller
 		~tr8s = ClipTR8s.new(~clip);

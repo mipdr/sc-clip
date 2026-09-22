@@ -15,11 +15,14 @@
  *   as controllers for SC-Clip's 4 channels, with 1:1 mapping to UMC404's
  *   4 input channels.
  *
- * Mapping:
+ * Default mapping (can be customized via setKnobMapping):
  *   - LEVEL fader -> SC-Clip channel level (dB)
- *   - CTRL knob   -> Channel effect slot 0 (e.g., reverb mix)
- *   - DECAY knob  -> Channel effect slot 1 (e.g., delay mix)
- *   - TUNE knob   -> Channel effect slot 2 (e.g., distortion mix)
+ *   - CTRL knob   -> Channel effect slot 0 parameter
+ *   - DECAY knob  -> Channel effect slot 1 parameter
+ *   - TUNE knob   -> Channel effect slot 2 parameter
+ *
+ * The controller ONLY maps to effects - it does not create them.
+ * Effects should be added to channels via SCClip before connecting the controller.
  *
  * CC numbers (from Roland TR-8S MIDI Implementation Chart v1.10):
  *                      TUNE  DECAY  LEVEL  CTRL
@@ -35,7 +38,7 @@
 ClipTR8s : ClipMIDIController {
 	var <tracks;            // Dictionary of track definitions (CC numbers)
 	var <channelAssignment; // Which SC-Clip channel each track controls
-	var <effectsChain;      // Effect configuration for each channel
+	var <knobMapping;       // How knobs map to effect slots and parameters
 
 	*new { |clip, midiChannel = 9|  // Basic Channel 10 = 0-indexed 9
 		^super.new(clip, midiChannel, "TR-8S").initTR8s;
@@ -62,33 +65,15 @@ ClipTR8s : ClipMIDIController {
 			rc: 3   // Ride       -> Channel 3
 		);
 
-		// Default effects chain configuration
-		// Subclasses or users can override this before calling connect()
-		effectsChain = [
-			// Effect slot 0: Reverb (controlled by CTRL knob)
-			(
-				synthDef: \channelReverb,
-				params: [\mix, 0.3, \room, 0.5, \damp, 0.5],
-				slot: 0,
-				controlParam: \mix,
-				controlRange: [0.0, 1.0]
-			),
-			// Effect slot 1: Delay (controlled by DECAY knob)
-			(
-				synthDef: \channelDelay,
-				params: [\mix, 0.0, \delayTime, 0.3, \decayTime, 2],
-				slot: 1,
-				controlParam: \mix,
-				controlRange: [0.0, 1.0]
-			),
-			// Effect slot 2: Distortion (controlled by TUNE knob)
-			(
-				synthDef: \channelDistortion,
-				params: [\mix, 0.0, \drive, 0.5],
-				slot: 2,
-				controlParam: \mix,
-				controlRange: [0.0, 1.0]
-			)
+		// Default knob-to-effect mapping
+		// Maps knobs to effect slots and parameters (if effects exist)
+		knobMapping = [
+			// CTRL knob -> Effect slot 0, \mix parameter
+			(knob: \ctrl, slot: 0, param: \mix, range: [0.0, 1.0]),
+			// DECAY knob -> Effect slot 1, \mix parameter
+			(knob: \decay, slot: 1, param: \mix, range: [0.0, 1.0]),
+			// TUNE knob -> Effect slot 2, \mix parameter
+			(knob: \tune, slot: 2, param: \mix, range: [0.0, 1.0])
 		];
 
 		"ClipTR8s: Initialized".postln;
@@ -106,46 +91,29 @@ ClipTR8s : ClipMIDIController {
 	setupChannelMappings {
 		channelAssignment.keysValuesDo { |track, chanIdx|
 			var cc = tracks[track];
-			var channel = clip.grid.getChannel(chanIdx);
 
-			if (channel.isNil, {
-				"ClipTR8s: Warning - Channel % not found, skipping track %".format(chanIdx, track).warn;
-			}, {
-				// Map fader to channel level
-				this.mapFader(cc[\level], chanIdx, -60, 6);
+			// Map fader to channel level
+			this.mapFader(cc[\level], chanIdx, -60, 6);
 
-				// Add effects and map knobs
-				effectsChain.do { |effectConfig|
-					var slot = effectConfig[\slot];
-					var synthDef = effectConfig[\synthDef];
-					var params = effectConfig[\params];
-					var controlParam = effectConfig[\controlParam];
-					var controlRange = effectConfig[\controlRange];
-					var knobCC;
+			// Map knobs to effect parameters (only if effects exist)
+			knobMapping.do { |mapping|
+				var knobName = mapping[\knob];
+				var slot = mapping[\slot];
+				var param = mapping[\param];
+				var range = mapping[\range];
+				var knobCC = cc[knobName];
 
-					// Add effect to channel
-					channel.addEffect(synthDef, params, slot);
-
-					// Determine which knob controls this effect slot
-					knobCC = case
-						{ slot == 0 } { cc[\ctrl] }   // Slot 0: CTRL knob
-						{ slot == 1 } { cc[\decay] }  // Slot 1: DECAY knob
-						{ slot == 2 } { cc[\tune] }   // Slot 2: TUNE knob
-						{ nil };  // No mapping for other slots
-
-					// Map knob to effect parameter
-					if (knobCC.notNil, {
-						this.mapKnob(
-							knobCC,
-							chanIdx,
-							slot,
-							controlParam,
-							controlRange[0],
-							controlRange[1]
-						);
-					});
-				};
-			});
+				if (knobCC.notNil, {
+					this.mapKnob(
+						knobCC,
+						chanIdx,
+						slot,
+						param,
+						range[0],
+						range[1]
+					);
+				});
+			};
 		};
 	}
 
@@ -160,10 +128,11 @@ ClipTR8s : ClipMIDIController {
 		"ClipTR8s: Channel assignment updated".postln;
 	}
 
-	// Allow users to customize effects chain before connecting
-	setEffectsChain { |newEffectsChain|
-		effectsChain = newEffectsChain;
-		"ClipTR8s: Effects chain updated".postln;
+	// Allow users to customize knob mapping before connecting
+	// Example: setKnobMapping([(knob: \ctrl, slot: 0, param: \room, range: [0.0, 1.0])])
+	setKnobMapping { |newKnobMapping|
+		knobMapping = newKnobMapping;
+		"ClipTR8s: Knob mapping updated".postln;
 	}
 
 	// Print current configuration
@@ -174,7 +143,12 @@ ClipTR8s : ClipMIDIController {
 		"    OH (Open Hat)   -> Channel %".format(channelAssignment[\oh]).postln;
 		"    CC (Crash)      -> Channel %".format(channelAssignment[\cc]).postln;
 		"    RC (Ride)       -> Channel %".format(channelAssignment[\rc]).postln;
-		"  Effects chain: % slots configured per channel".format(effectsChain.size).postln;
+		"  Knob mappings: % configured".format(knobMapping.size).postln;
+		knobMapping.do { |mapping|
+			"    % knob -> effect slot %, param %".format(
+				mapping[\knob], mapping[\slot], mapping[\param]
+			).postln;
+		};
 	}
 
 	// Override disconnect to clean up
