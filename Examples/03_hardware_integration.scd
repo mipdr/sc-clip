@@ -1,23 +1,26 @@
 /*
  * SC-Clip Hardware Integration Example
  *
- * This example demonstrates how to integrate audio interfaces and MIDI
- * controllers with SC-Clip using the hardware integration classes.
+ * This example demonstrates how to integrate MIDI controllers and MIDI clock
+ * with SC-Clip.
  *
  * Available classes:
- *   - ClipAudioInterface (abstract base class for audio interfaces)
- *   - ClipUMC404 (concrete implementation for Behringer UMC404HD)
  *   - ClipMIDIController (base class for MIDI controllers)
- *   - ClipTR8s (concrete implementation for Roland TR-8S as MIDI controller)
+ *   - ClipTR8s4Channel (concrete implementation for Roland TR-8S as MIDI controller)
+ *   - ClipMIDIClock (helper for setting up MIDI clock output)
+ *   - ClipLaunchpadMini (grid controller for clip launching)
  *
  * Prerequisites:
- *   - JACK audio server running (for UMC404 example)
+ *   - JACK audio server running (handles audio interface routing)
  *   - Hardware connected and powered on
  *   - MIDIClient initialized (done automatically by the classes)
+ *
+ * Note: Audio interface selection happens in JACK, not in SC-Clip.
+ * See your project's start-audio.sh script for JACK device configuration.
  */
 
 // ========================================================================
-// Example 1: Behringer UMC404HD Audio Interface
+// Example 1: MIDI Clock Output Setup
 // ========================================================================
 
 (
@@ -26,34 +29,25 @@
 
 ~clip.boot(
 	options: (
-		numInputBusChannels: 4,  // UMC404 has 4 inputs
-		numOutputBusChannels: 2, // Stereo output (main L/R)
+		numInputBusChannels: 4,  // 4 hardware inputs (from JACK)
+		numOutputBusChannels: 2, // Stereo output
 		sampleRate: 48000
 	),
 	action: {
 		"SC-Clip ready".postln;
 
-		// Create and connect UMC404 interface
-		// Pass project directory for connect-midi.sh script
-		~projectDir = PathName(thisProcess.nowExecutingPath).pathOnly ++ "../";
-		~umc404 = ClipUMC404.new(~projectDir);
-		~umc404.connect(~clip);
+		// Set up MIDI clock output
+		// For UMC404HD on Linux:
+		~midiOut = ClipMIDIClock.setup(~clip, "UMC404HD 192k", "UMC404HD 192k MIDI 1");
 
-		// Enable MIDI thru (hardware MIDI IN -> MIDI OUT)
-		~umc404.enableMIDIThru;
-
-		// Enable MIDI clock output
-		~midiOut = ~umc404.getMIDIOut;
-		if (~midiOut.notNil, {
-			~clip.enableMIDIClock(~midiOut);
-			"MIDI clock enabled".postln;
-		});
+		// For other devices, just change the device name:
+		// ~midiOut = ClipMIDIClock.setup(~clip, "YourDevice", "YourDevice MIDI 1");
 	}
 );
 )
 
-// To disconnect the UMC404
-~umc404.disconnect;
+// To disable MIDI clock
+ClipMIDIClock.disable(~clip);
 
 // ========================================================================
 // Example 2: Roland TR-8S MIDI Controller
@@ -193,12 +187,10 @@ fork {
 ~controller.disconnect;
 
 // ========================================================================
-// Example 5: Complete Setup with Both UMC404 and TR-8S
+// Example 5: Complete Setup with MIDI Clock and TR-8S
 // ========================================================================
 
 (
-~projectDir = PathName(thisProcess.nowExecutingPath).pathOnly ++ "../";
-
 ~clip = SCClip.new(numChannels: 4, numSlots: 8, server: s);
 
 ~clip.boot(
@@ -210,16 +202,8 @@ fork {
 	action: {
 		"SC-Clip ready".postln;
 
-		// Set up UMC404 audio interface
-		~umc404 = ClipUMC404.new(~projectDir);
-		~umc404.connect(~clip);
-		~umc404.enableMIDIThru;
-
-		// Enable MIDI clock
-		~midiOut = ~umc404.getMIDIOut;
-		if (~midiOut.notNil, {
-			~clip.enableMIDIClock(~midiOut);
-		});
+		// Set up MIDI clock output
+		~midiOut = ClipMIDIClock.setup(~clip, "UMC404HD 192k", "UMC404HD 192k MIDI 1");
 
 		// Add effects to channels before connecting TR-8S
 		4.do { |chanIdx|
@@ -241,6 +225,6 @@ fork {
 // Cleanup
 (
 ~tr8s.disconnect;
-~umc404.disconnect;
+ClipMIDIClock.disable(~clip);
 ~clip.shutdown;
 )

@@ -4,11 +4,16 @@
  * This example demonstrates a complete production setup with:
  *   - 4 channels with explicit input mapping
  *   - 3 effects per channel (reverb, delay, distortion)
- *   - UMC404 audio interface (4 inputs -> 4 channels)
+ *   - Audio interface configured via JACK (4 inputs -> 4 channels)
+ *   - MIDI clock output
  *   - Launchpad Mini for clip triggering
  *   - TR-8S (4-channel) for level and effects control
  *
  * This is the recommended approach for building a complete SC-Clip rig.
+ *
+ * Note: Audio interface selection happens in JACK (see start-audio.sh),
+ * not in SC-Clip. SC-Clip just configures how many channels to use and
+ * which hardware inputs map to which channels.
  */
 
 // ========================================================================
@@ -103,32 +108,29 @@ fork {
 )
 
 // ========================================================================
-// Step 3: Connect UMC404 Audio Interface
+// Step 3: Set Up MIDI Clock Output
 // ========================================================================
 
 /*
- * The UMC404 provides:
- *   - 4 hardware inputs (already mapped to SC-Clip channels)
- *   - MIDI clock output
- *   - MIDI thru functionality
+ * MIDI clock output for syncing external gear (drum machines, sequencers, etc.)
+ * This example uses a UMC404HD audio interface, but you can use any MIDI device.
  */
 
 (
-~umc404 = ClipUMC404.new(~projectDir);
-~umc404.connect(~clip);
+// Set up MIDI clock output
+// Change device/port names for your hardware
+~midiOut = ClipMIDIClock.setup(~clip, "UMC404HD 192k", "UMC404HD 192k MIDI 1");
 
-// Enable MIDI thru (hardware MIDI IN -> MIDI OUT)
-// This allows external MIDI controllers/synths to pass through
-~umc404.enableMIDIThru;
-
-// Enable MIDI clock output for syncing external gear
-~midiOut = ~umc404.getMIDIOut;
 if (~midiOut.notNil, {
-	~clip.enableMIDIClock(~midiOut);
-	"MIDI clock enabled via UMC404".postln;
+	"MIDI clock enabled".postln;
+}, {
+	"MIDI clock setup failed - check device name".warn;
 });
 
-"UMC404 audio interface connected".postln;
+// Optional: Enable MIDI thru (hardware MIDI IN -> MIDI OUT)
+// This allows external MIDI controllers/synths to pass through
+// Uncomment to enable (Linux/ALSA only):
+// "aconnect -l | awk '/UMC404HD 192k/ && /MIDI 1/ { c=$1; sub(\":\",\"\",c); print c; exit }' | xargs -I {} aconnect {}:{} {}:{}".unixCmd;
 )
 
 // ========================================================================
@@ -187,11 +189,10 @@ if (~launchpad.notNil, {
 (
 "".postln;
 "=== Hardware Setup Complete ===".postln;
-"Audio Interface:  UMC404HD (4 inputs mapped 1:1 to channels)".postln;
+"Audio Interface:  Configured via JACK (4 inputs mapped 1:1 to channels)".postln;
 "Grid Controller:  Launchpad Mini (4x8 clip grid)".postln;
 "MIDI Controller:  TR-8S 4Ch (levels + 3 effects per channel)".postln;
-"MIDI Clock:       Enabled via UMC404".postln;
-"MIDI Thru:        Enabled".postln;
+"MIDI Clock:       Enabled".postln;
 "".postln;
 "Total Channels:   4".postln;
 "Slots per Channel: 8".postln;
@@ -290,7 +291,7 @@ if (~launchpad.notNil, {
 (
 ~tr8s.disconnect;
 ~launchpad.disconnect;
-~umc404.disconnect;
+ClipMIDIClock.disable(~clip);
 ~clip.shutdown;
 )
 
@@ -319,15 +320,17 @@ TR-8S CONTROLLER (4 Channels):
 └───────┴──────┴───────┴───────┴──────┘
         Slot 2  Slot 1    dB    Slot 0
 
-UMC404 AUDIO INTERFACE:
+AUDIO INTERFACE (configured via JACK):
 ┌────────────────────┐
 │ Input 0 -> Chan 0  │
 │ Input 1 -> Chan 1  │
 │ Input 2 -> Chan 2  │
 │ Input 3 -> Chan 3  │
-└────────────────────┘
 │ Output L/R (Main)  │
-│ MIDI Clock Out     │
-│ MIDI Thru (In->Out)│
 └────────────────────┘
+
+MIDI CLOCK OUTPUT:
+- Device: UMC404HD 192k MIDI 1 (or your MIDI interface)
+- Tempo: Synced to SC-Clip transport
+- Protocol: 24 PPQN
 */
