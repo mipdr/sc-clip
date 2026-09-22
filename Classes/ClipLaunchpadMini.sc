@@ -47,6 +47,9 @@ ClipLaunchpadMini : ClipGridController {
 		// Initialize device (XY layout mode)
 		this.initializeDevice;
 
+		// Show initialization confirmation (blink entire grid green 3 times)
+		this.showInitializationConfirmation;
+
 		// Set up note on/off responders
 		this.setupMIDIResponders(deviceName);
 
@@ -160,6 +163,41 @@ ClipLaunchpadMini : ClipGridController {
 			\amber_high,   // Channel 6
 			\yellow        // Channel 7
 		];
+	}
+
+	// Show initialization confirmation: blink entire grid green 3 times
+	showInitializationConfirmation {
+		var greenVelocity = this.colorToVelocity(\green);
+		var offVelocity = this.colorToVelocity(\off);
+
+		// Fork a routine to blink asynchronously
+		fork {
+			3.do {
+				// Turn all LEDs green (entire 8x8 grid)
+				8.do { |row|
+					8.do { |col|
+						var note = this.coordsToNote(row, col);
+						midiOut.noteOn(0, note, greenVelocity);
+					};
+				};
+
+				// Wait 0.15 seconds
+				0.15.wait;
+
+				// Turn all LEDs off
+				8.do { |row|
+					8.do { |col|
+						var note = this.coordsToNote(row, col);
+						midiOut.noteOn(0, note, offVelocity);
+					};
+				};
+
+				// Wait 0.15 seconds before next blink
+				0.15.wait;
+			};
+
+			"ClipLaunchpadMini: Initialization animation complete".postln;
+		};
 	}
 
 	// Disconnect (override to clear LEDs before disconnect)
