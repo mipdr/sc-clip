@@ -12,33 +12,52 @@ ClipGrid {
 	var <transport;
 	var <masterBus;
 	var <server;
+	var <inputMapping;  // Array: channel index -> hardware input index
 
-	*new { |numChannels = 4, numSlots = 8, transport, masterBus, server|
+	*new { |numChannels = 4, numSlots = 8, transport, masterBus, server, inputMapping|
 		^super.newCopyArgs(
 			numChannels,              // numChannels
 			numSlots,                 // numSlots
 			nil,                      // channels
 			transport,                // transport
 			masterBus,                // masterBus
-			server ? Server.default   // server
+			server ? Server.default,  // server
+			inputMapping              // inputMapping (nil = default 1:1 mapping)
 		).init;
 	}
 
 	init {
-		// Create channels
+		// Default to 1:1 mapping if not specified
+		if (inputMapping.isNil, {
+			inputMapping = Array.series(numChannels);  // [0, 1, 2, 3, ...]
+		});
+
+		// Validate input mapping
+		if (inputMapping.size != numChannels, {
+			"ClipGrid: inputMapping size (%) doesn't match numChannels (%)".format(
+				inputMapping.size, numChannels
+			).error;
+			^this;
+		});
+
+		// Create channels with explicit input mapping
 		channels = Array.fill(numChannels, { |i|
 			ClipChannel.new(
 				channelIndex: i,
 				numSlots: numSlots,
 				transport: transport,
 				masterChannel: masterBus.mixerChannel,
-				server: server
+				server: server,
+				hardwareInputIndex: inputMapping[i]
 			);
 		});
 
 		"ClipGrid: Initialized % channels × % slots = % total slots"
 			.format(numChannels, numSlots, numChannels * numSlots)
 			.postln;
+		"ClipGrid: Input mapping - %".format(
+			numChannels.collect({ |i| "Ch%->In%".format(i, inputMapping[i]) }).join(", ")
+		).postln;
 	}
 
 	// Get a specific slot
