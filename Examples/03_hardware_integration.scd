@@ -87,7 +87,7 @@ fork {
 	};
 
 	// Now connect TR-8S controller to map its knobs to the effects
-	~tr8s = ClipTR8s.new(~clip);
+	~tr8s = ClipTR8s4Channel.new(~clip);
 	~tr8s.connect;
 
 	/*
@@ -133,7 +133,7 @@ fork {
 	};
 
 	// Create TR-8S controller
-	~tr8s = ClipTR8s.new(~clip);
+	~tr8s = ClipTR8s4Channel.new(~clip);
 
 	// Customize channel assignment before connecting
 	~tr8s.setChannelAssignment(
@@ -230,7 +230,7 @@ fork {
 		};
 
 		// Set up TR-8S controller
-		~tr8s = ClipTR8s.new(~clip);
+		~tr8s = ClipTR8s4Channel.new(~clip);
 		~tr8s.connect;
 
 		"Hardware integration complete".postln;

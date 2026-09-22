@@ -1,7 +1,8 @@
 /*
- * ClipTR8s
+ * ClipTR8s4Channel
  *
- * Concrete implementation for Roland TR-8S drum machine as a MIDI controller.
+ * Concrete implementation for Roland TR-8S drum machine as a MIDI controller,
+ * using 4 of the 11 available tracks.
  *
  * Hardware specs:
  *   - 11 drum tracks (BD, SD, LT, MT, HT, RS, CP, CH, OH, CC, RC)
@@ -10,7 +11,7 @@
  *   - Class-compliant USB MIDI on Linux (no driver needed)
  *   - Shows up as ALSA MIDI ports "TR-8S MIDI 1" and "TR-8S MIDI 2"
  *
- * SC-Clip usage:
+ * SC-Clip usage (4-channel configuration):
  *   This implementation uses the 4 rightmost TR-8S tracks (CH, OH, CC, RC)
  *   as controllers for SC-Clip's 4 channels, with 1:1 mapping to UMC404's
  *   4 input channels.
@@ -31,20 +32,20 @@
  *   CC (Crash)         83     84     85    109
  *   RC (Ride)          86     87     88    110
  *
- * Other tracks (BD, SD, LT, MT, HT, RS, CP) are not used for control in this
- * implementation, but could be mapped if needed by extending this class.
+ * For an 11-channel configuration using all TR-8S tracks, see ClipTR8s11Channel
+ * (future implementation).
  */
 
-ClipTR8s : ClipMIDIController {
+ClipTR8s4Channel : ClipMIDIController {
 	var <tracks;            // Dictionary of track definitions (CC numbers)
 	var <channelAssignment; // Which SC-Clip channel each track controls
 	var <knobMapping;       // How knobs map to effect slots and parameters
 
 	*new { |clip, midiChannel = 9|  // Basic Channel 10 = 0-indexed 9
-		^super.new(clip, midiChannel, "TR-8S").initTR8s;
+		^super.new(clip, midiChannel, "TR-8S 4Ch").initTR8s4Channel;
 	}
 
-	initTR8s {
+	initTR8s4Channel {
 		// Initialize MIDI if needed (safe to call multiple times)
 		if (MIDIClient.initialized.not, { MIDIClient.init });
 		MIDIIn.connectAll;
@@ -76,7 +77,7 @@ ClipTR8s : ClipMIDIController {
 			(knob: \tune, slot: 2, param: \mix, range: [0.0, 1.0])
 		];
 
-		"ClipTR8s: Initialized".postln;
+		"ClipTR8s4Channel: Initialized".postln;
 		^this;
 	}
 
@@ -125,19 +126,19 @@ ClipTR8s : ClipMIDIController {
 			cc: ccChannel,
 			rc: rcChannel
 		);
-		"ClipTR8s: Channel assignment updated".postln;
+		"ClipTR8s4Channel: Channel assignment updated".postln;
 	}
 
 	// Allow users to customize knob mapping before connecting
 	// Example: setKnobMapping([(knob: \ctrl, slot: 0, param: \room, range: [0.0, 1.0])])
 	setKnobMapping { |newKnobMapping|
 		knobMapping = newKnobMapping;
-		"ClipTR8s: Knob mapping updated".postln;
+		"ClipTR8s4Channel: Knob mapping updated".postln;
 	}
 
 	// Print current configuration
 	printStatus {
-		"ClipTR8s: Connected and configured".postln;
+		"ClipTR8s4Channel: Connected and configured".postln;
 		"  TR-8S tracks -> SC-Clip channels:".postln;
 		"    CH (Closed Hat) -> Channel %".format(channelAssignment[\ch]).postln;
 		"    OH (Open Hat)   -> Channel %".format(channelAssignment[\oh]).postln;
@@ -153,7 +154,7 @@ ClipTR8s : ClipMIDIController {
 
 	// Override disconnect to clean up
 	disconnect {
-		"ClipTR8s: Disconnecting...".postln;
+		"ClipTR8s4Channel: Disconnecting...".postln;
 		^super.disconnect;
 	}
 }
