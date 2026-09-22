@@ -213,6 +213,37 @@ SCClip {
 		"SCClip: Master bus metering enabled (playing to speakers)".postln;
 	}
 
+	// MIDI Grid Controller
+
+	connectController { |controllerType = \launchpadMini, deviceName, numRows, numCols|
+		var controller;
+
+		case
+		{ controllerType == \launchpadMini } {
+			controller = ClipLaunchpadMini.new(
+				grid,
+				transport,
+				numRows ? 4,   // Default 4 rows for clips
+				numCols ? 8    // Default 8 columns (channels)
+			);
+			controller.connect(deviceName ? "Launchpad Mini");
+		}
+		{ controllerType == \apc40 } {
+			"Controller type % not yet implemented".format(controllerType).error;
+			^nil;
+		}
+		{ controllerType == \push } {
+			"Controller type % not yet implemented".format(controllerType).error;
+			^nil;
+		}
+		{
+			"Unknown controller type: %".format(controllerType).error;
+			^nil;
+		};
+
+		^controller;
+	}
+
 	// Cleanup
 	shutdown {
 		"SCClip: Shutting down...".postln;
