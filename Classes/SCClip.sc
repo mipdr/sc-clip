@@ -215,8 +215,13 @@ SCClip {
 
 	// MIDI Grid Controller
 
-	connectController { |controllerType = \launchpadMini, deviceName, numRows, numCols|
+	connectController { |controllerType, deviceName, numRows, numCols|
 		var controller;
+
+		if (controllerType.isNil, {
+			"SCClip.connectController: controllerType is required (e.g. \\launchpadMini)".error;
+			^nil;
+		});
 
 		case
 		{ controllerType == \launchpadMini } {
@@ -228,16 +233,9 @@ SCClip {
 			);
 			controller.connect(deviceName ? "Launchpad Mini");
 		}
-		{ controllerType == \apc40 } {
-			"Controller type % not yet implemented".format(controllerType).error;
-			^nil;
-		}
-		{ controllerType == \push } {
-			"Controller type % not yet implemented".format(controllerType).error;
-			^nil;
-		}
 		{
 			"Unknown controller type: %".format(controllerType).error;
+			"Available controller types: \\launchpadMini".postln;
 			^nil;
 		};
 
