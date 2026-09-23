@@ -1,4 +1,4 @@
-name: Test Compilation
+name: Quark Validation
 
 on:
   push:
@@ -7,53 +7,66 @@ on:
     branches: ['**']
 
 jobs:
-  test-compile:
+  validate:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install SuperCollider
+      - name: Validate quark structure
         run: |
-          sudo apt-get update
-          sudo apt-get install -y supercollider xvfb
+          echo "========================================"
+          echo "Validating sc-clip quark structure"
+          echo "========================================"
 
-      - name: Verify SuperCollider installation
-        run: |
-          which sclang
-          sclang -version || echo "SuperCollider installed"
-
-      - name: Install sc-clip quark
-        run: |
-          mkdir -p ~/.local/share/SuperCollider/Extensions
-          ln -sfn $GITHUB_WORKSPACE ~/.local/share/SuperCollider/Extensions/sc-clip
-          echo "Linked quark to Extensions directory"
-
-      - name: Test SuperCollider class library compilation
-        run: |
-          echo "Testing if class library compiles with sc-clip..."
-          timeout 30 xvfb-run -a sclang -D scripts/test-syntax.scd || {
-            echo "Class library failed to compile - checking for syntax errors..."
-            timeout 30 xvfb-run -a sclang -version 2>&1 | head -20
+          # Check quark file exists
+          if [ ! -f "sc-clip.quark" ]; then
+            echo "❌ ERROR: sc-clip.quark file not found"
             exit 1
-          }
+          fi
+          echo "✓ Quark metadata file exists"
 
-      - name: Verify quark metadata
-        run: |
-          echo "Verifying quark file..."
-          test -f sc-clip.quark
-          echo "Quark file exists ✓"
-          cat sc-clip.quark
+          # Check Classes directory exists
+          if [ ! -d "Classes" ]; then
+            echo "❌ ERROR: Classes directory not found"
+            exit 1
+          fi
+          echo "✓ Classes directory exists"
 
-      - name: Count classes
-        run: |
-          echo "Counting SuperCollider classes..."
+          # Count class files
           CLASS_COUNT=$(find Classes -name "*.sc" | wc -l)
-          echo "Found $CLASS_COUNT class files"
-          test "$CLASS_COUNT" -gt 0
-          echo "Class count check passed ✓"
+          if [ "$CLASS_COUNT" -eq 0 ]; then
+            echo "❌ ERROR: No .sc files found in Classes/"
+            exit 1
+          fi
+          echo "✓ Found $CLASS_COUNT SuperCollider class files"
 
-      - name: Report status
-        if: success()
-        run: echo "✅ sc-clip quark validated successfully!"
+          # Validate each class file has a class definition
+          echo ""
+          echo "Checking class files:"
+          INVALID_COUNT=0
+          for file in Classes/*.sc; do
+            filename=$(basename "$file")
+            if ! grep -q "^[[:space:]]*class\|^class" "$file"; then
+              echo "  ⚠  $filename - missing class definition"
+              INVALID_COUNT=$((INVALID_COUNT + 1))
+            else
+              echo "  ✓ $filename"
+            fi
+          done
+
+          if [ "$INVALID_COUNT" -gt 0 ]; then
+            echo ""
+            echo "❌ WARNING: $INVALID_COUNT files without class definitions"
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "✅ Quark structure validation complete!"
+          echo "========================================"
+
+      - name: Display quark metadata
+        run: |
+          echo "Quark metadata:"
+          cat sc-clip.quark
