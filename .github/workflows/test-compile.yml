@@ -9,38 +9,34 @@ on:
 jobs:
   test-compile:
     runs-on: ubuntu-latest
+    container:
+      image: rukano/supercollider:latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install SuperCollider from PPA
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository -y ppa:supercollider/ppa
-          sudo apt-get update
-          sudo apt-get install -y supercollider
-
       - name: Verify SuperCollider installation
         run: |
-          which sclang
-          sclang -version || echo "SuperCollider installed"
+          which sclang || echo "sclang not in PATH"
+          ls -la /usr/bin/sc* || true
+          ls -la /usr/local/bin/sc* || true
+          find / -name sclang 2>/dev/null || true
 
       - name: Install sc-clip quark
         run: |
-          mkdir -p ~/.local/share/SuperCollider/Extensions
-          ln -sfn $GITHUB_WORKSPACE ~/.local/share/SuperCollider/Extensions/sc-clip
+          mkdir -p /root/.local/share/SuperCollider/Extensions
+          ln -sfn $GITHUB_WORKSPACE /root/.local/share/SuperCollider/Extensions/sc-clip
 
       - name: Install dependencies
         run: |
           echo "Installing dependencies..."
-          timeout 120 xvfb-run -a sclang -D scripts/install-deps.scd
+          timeout 120 sclang scripts/install-deps.scd
 
       - name: Run compilation test
         run: |
           echo "Running compilation test..."
-          timeout 60 xvfb-run -a sclang -D scripts/test-compile.scd
+          timeout 60 sclang scripts/test-compile.scd
 
       - name: Report status
         if: success()
