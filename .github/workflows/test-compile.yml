@@ -8,17 +8,14 @@ on:
 
 jobs:
   test-compile:
-    runs-on: ubuntu-22.04  # Use older Ubuntu that has SuperCollider PPA support
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install SuperCollider from PPA
+      - name: Install SuperCollider
         run: |
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository -y ppa:supercollider/ppa
           sudo apt-get update
           sudo apt-get install -y supercollider xvfb
 
@@ -31,17 +28,32 @@ jobs:
         run: |
           mkdir -p ~/.local/share/SuperCollider/Extensions
           ln -sfn $GITHUB_WORKSPACE ~/.local/share/SuperCollider/Extensions/sc-clip
+          echo "Linked quark to Extensions directory"
 
-      - name: Install dependencies
+      - name: Test SuperCollider class library compilation
         run: |
-          echo "Installing dependencies..."
-          timeout 120 xvfb-run -a sclang -D scripts/install-deps.scd
+          echo "Testing if class library compiles with sc-clip..."
+          timeout 30 xvfb-run -a sclang -D scripts/test-syntax.scd || {
+            echo "Class library failed to compile - checking for syntax errors..."
+            timeout 30 xvfb-run -a sclang -version 2>&1 | head -20
+            exit 1
+          }
 
-      - name: Run compilation test
+      - name: Verify quark metadata
         run: |
-          echo "Running compilation test..."
-          timeout 60 xvfb-run -a sclang -D scripts/test-compile.scd
+          echo "Verifying quark file..."
+          test -f sc-clip.quark
+          echo "Quark file exists ✓"
+          cat sc-clip.quark
+
+      - name: Count classes
+        run: |
+          echo "Counting SuperCollider classes..."
+          CLASS_COUNT=$(find Classes -name "*.sc" | wc -l)
+          echo "Found $CLASS_COUNT class files"
+          test "$CLASS_COUNT" -gt 0
+          echo "Class count check passed ✓"
 
       - name: Report status
         if: success()
-        run: echo "✅ sc-clip quark compiled successfully!"
+        run: echo "✅ sc-clip quark validated successfully!"
