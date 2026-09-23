@@ -14,18 +14,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Test compilation with SuperCollider
-        uses: docker://ghcr.io/capital-g/sc-docker:latest
-        with:
-          args: >
-            bash -c "
-            mkdir -p /github/home/.local/share/SuperCollider/Extensions &&
-            ln -sfn /github/workspace /github/home/.local/share/SuperCollider/Extensions/sc-clip &&
-            echo 'Installing dependencies...' &&
-            QT_QPA_PLATFORM=offscreen timeout 120 sclang -D /github/workspace/scripts/install-deps.scd &&
-            echo 'Running compilation test...' &&
-            QT_QPA_PLATFORM=offscreen timeout 60 sclang -D /github/workspace/scripts/test-compile.scd
-            "
+      - name: Install SuperCollider
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y supercollider
+
+      - name: Verify SuperCollider installation
+        run: |
+          which sclang
+          sclang -version || echo "SuperCollider installed"
+
+      - name: Install sc-clip quark
+        run: |
+          mkdir -p ~/.local/share/SuperCollider/Extensions
+          ln -sfn $GITHUB_WORKSPACE ~/.local/share/SuperCollider/Extensions/sc-clip
+
+      - name: Install dependencies
+        run: |
+          echo "Installing dependencies..."
+          timeout 120 xvfb-run -a sclang -D scripts/install-deps.scd
+
+      - name: Run compilation test
+        run: |
+          echo "Running compilation test..."
+          timeout 60 xvfb-run -a sclang -D scripts/test-compile.scd
 
       - name: Report status
         if: success()
