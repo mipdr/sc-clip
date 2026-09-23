@@ -1,0 +1,72 @@
+name: Quark Validation
+
+on:
+  push:
+    branches: ['**']  # Run on all branches
+  pull_request:
+    branches: ['**']
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate quark structure
+        run: |
+          echo "========================================"
+          echo "Validating sc-clip quark structure"
+          echo "========================================"
+
+          # Check quark file exists
+          if [ ! -f "sc-clip.quark" ]; then
+            echo "❌ ERROR: sc-clip.quark file not found"
+            exit 1
+          fi
+          echo "✓ Quark metadata file exists"
+
+          # Check Classes directory exists
+          if [ ! -d "Classes" ]; then
+            echo "❌ ERROR: Classes directory not found"
+            exit 1
+          fi
+          echo "✓ Classes directory exists"
+
+          # Count class files
+          CLASS_COUNT=$(find Classes -name "*.sc" | wc -l)
+          if [ "$CLASS_COUNT" -eq 0 ]; then
+            echo "❌ ERROR: No .sc files found in Classes/"
+            exit 1
+          fi
+          echo "✓ Found $CLASS_COUNT SuperCollider class files"
+
+          # Validate each class file has a class definition
+          echo ""
+          echo "Checking class files:"
+          INVALID_COUNT=0
+          for file in Classes/*.sc; do
+            filename=$(basename "$file")
+            if ! grep -q "^[[:space:]]*class\|^class" "$file"; then
+              echo "  ⚠  $filename - missing class definition"
+              INVALID_COUNT=$((INVALID_COUNT + 1))
+            else
+              echo "  ✓ $filename"
+            fi
+          done
+
+          if [ "$INVALID_COUNT" -gt 0 ]; then
+            echo ""
+            echo "❌ WARNING: $INVALID_COUNT files without class definitions"
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "✅ Quark structure validation complete!"
+          echo "========================================"
+
+      - name: Display quark metadata
+        run: |
+          echo "Quark metadata:"
+          cat sc-clip.quark
