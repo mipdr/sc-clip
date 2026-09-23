@@ -18,8 +18,9 @@ ClipChannel {
 	var <effects;  // IdentityDictionary: slot -> running effect instance (from mixerChannel.playfx)
 	var <isSoloed;  // ddwMixerChannel has no solo concept -- tracked here; actual
 	                // cross-channel silencing is done by ClipGrid:soloChannel/unSoloChannel
+	var <hardwareInputIndex;  // Which hardware input this channel reads from (nil = no input)
 
-	*new { |channelIndex, numSlots = 8, transport, masterChannel, server|
+	*new { |channelIndex, numSlots = 8, transport, masterChannel, server, hardwareInputIndex|
 		^super.newCopyArgs(
 			channelIndex,             // channelIndex
 			numSlots,                 // numSlots
@@ -31,11 +32,16 @@ ClipChannel {
 			transport,                // transport
 			server ? Server.default,  // server
 			nil,                      // effects
-			false                     // isSoloed
+			false,                    // isSoloed
+			hardwareInputIndex        // hardwareInputIndex (nil = defaults to channelIndex for backward compat)
 		).init(masterChannel);
 	}
 
 	init { |masterChannel|
+		// Default to channelIndex for backward compatibility
+		if (hardwareInputIndex.isNil, {
+			hardwareInputIndex = channelIndex;
+		});
 		effects = IdentityDictionary.new;
 
 		// Create node groups for this channel
@@ -74,11 +80,10 @@ ClipChannel {
 	// recorder/overdub synths actually read from)
 	createInputMonitor {
 		server.bind {
-			var hardwareInBus = channelIndex;  // Hardware input channel index
 			var mixerInBus = mixerChannel.inbus;
 
 			Synth(\inputMonitor, [
-				\hardwareIn, hardwareInBus,
+				\hardwareIn, hardwareInputIndex,  // Use explicit hardware input mapping
 				\mixerIn, mixerInBus,
 				\recordBus, inputBus
 			], recorderGroup, \addToHead);

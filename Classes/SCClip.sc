@@ -12,15 +12,17 @@ SCClip {
 	var <grid;
 	var <numChannels;
 	var <numSlots;
+	var <inputMapping;  // Array: channel index -> hardware input index
 
-	*new { |numChannels = 4, numSlots = 8, server|
+	*new { |numChannels = 4, numSlots = 8, server, inputMapping|
 		^super.newCopyArgs(
 			server ? Server.default,  // server
 			nil,                      // transport
 			nil,                      // masterBus
 			nil,                      // grid
 			numChannels,              // numChannels
-			numSlots                  // numSlots
+			numSlots,                 // numSlots
+			inputMapping              // inputMapping (nil = default 1:1)
 		);
 	}
 
@@ -71,13 +73,14 @@ SCClip {
 		// Add mastering chain
 		masterBus.addMasteringChain;
 
-		// Create grid with channels
+		// Create grid with channels and input mapping
 		grid = ClipGrid.new(
 			numChannels: numChannels,
 			numSlots: numSlots,
 			transport: transport,
 			masterBus: masterBus,
-			server: server
+			server: server,
+			inputMapping: inputMapping
 		);
 
 		"SCClip: Initialized (% channels × % slots)".format(numChannels, numSlots).postln;
