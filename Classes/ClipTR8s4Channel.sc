@@ -46,9 +46,12 @@ ClipTR8s4Channel : ClipMIDIController {
 	}
 
 	initTR8s4Channel {
-		// Initialize MIDI if needed (safe to call multiple times)
-		if (MIDIClient.initialized.not, { MIDIClient.init });
-		MIDIIn.connectAll;
+		// Initialize MIDI and connect all input sources. Routed through
+		// ClipMIDI so this only happens once per session even if another
+		// controller (e.g. ClipLaunchpadMini) already did it -- calling
+		// MIDIIn.connectAll a second time in the same session has been
+		// observed to hang sclang on real hardware.
+		ClipMIDI.connectAllInputs;
 
 		// Define TR-8S track CC numbers (from Roland MIDI implementation chart)
 		tracks = (

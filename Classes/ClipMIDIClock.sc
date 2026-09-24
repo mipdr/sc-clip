@@ -16,6 +16,8 @@ ClipMIDIClock {
 	// Set up MIDI clock output for SC-Clip
 	// Returns the MIDIOut instance on success, nil on failure
 	*setup { |clip, deviceName, portName|
+		var midiOut;
+
 		// Initialize MIDI if needed
 		if (MIDIClient.initialized.not, {
 			MIDIClient.init;
@@ -23,7 +25,7 @@ ClipMIDIClock {
 		});
 
 		// Create MIDIOut
-		var midiOut = MIDIOut.newByName(deviceName, portName);
+		midiOut = MIDIOut.newByName(deviceName, portName);
 
 		if (midiOut.isNil, {
 			"ClipMIDIClock: Failed to create MIDIOut for device '%' port '%'".format(

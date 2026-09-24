@@ -4,7 +4,7 @@
  * Individual clip/loop slot with state machine for recording and playback.
  * Manages one buffer, RecordBuf synth, and PlayBuf synth.
  *
- * States: \empty, \armed, \recording, \playing, \overdubbing, \queuedToStop, \stopped
+ * States: \empty, \armed, \recording, \playing, \overdubbing, \queuedToPlay, \queuedToStop, \stopped
  */
 
 ClipSlot {
@@ -155,9 +155,20 @@ ClipSlot {
 			^this;
 		});
 
+		// Leave \stopped right away: otherwise a second launch before the
+		// quantized start passes the check above again and schedules a second
+		// player, orphaning the first (it keeps looping, untracked, after stop).
+		this.setState(\queuedToPlay);
+
 		channel.transport.scheduleAtBeat(atBeat, {
-			this.startPlayback;
+			// Skip if the slot was cleared/changed while queued
+			if (state == \queuedToPlay, { this.startPlayback });
 		});
+	}
+
+	// Cancel a queued play before it starts (its scheduled start checks state)
+	cancelPlay {
+		if (state == \queuedToPlay, { this.setState(\stopped) });
 	}
 
 	// Internal: actually start the playback synth
@@ -172,6 +183,11 @@ ClipSlot {
 		"ClipSlot[%,%]: Starting playback"
 			.format(channel.channelIndex, slotIndex)
 			.postln;
+
+		// Never drop a reference to a running player -- it would keep looping
+		if (playerSynth.notNil, {
+			playerSynth.set(\gate, 0);
+		});
 
 		// Create player synth in the looper group
 		playerSynth = Synth(\clipPlayer, [
@@ -303,6 +319,7 @@ ClipSlot {
 	isPlaying { ^state == \playing }
 	isOverdubbing { ^state == \overdubbing }
 	isStopped { ^state == \stopped }
+	isQueuedToPlay { ^state == \queuedToPlay }
 	hasAudio { ^buffer.notNil }
 
 	// Cleanup

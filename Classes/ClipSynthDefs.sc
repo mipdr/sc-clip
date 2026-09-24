@@ -139,28 +139,35 @@ ClipSynthDefs {
 		// ahead of its fader synth on a mono (1-channel) inbus -- so these
 		// read/write a single channel and ReplaceOut in place, same as the
 		// master effects above but per-channel instead of on the master bus.
-		// playfx auto-supplies i_out/out/outbus, all set to the channel's inbus.
+		// playfx auto-supplies i_out/out/outbus, all set to the channel's inbus
+		// -- but i_out is NOT a separate control: SynthDef strips the "i_" rate
+		// prefix, so a control literally named "i_out" registers as an ir-rate
+		// control named "out", colliding with an "out" arg declared in the same
+		// function (SynthDef.add throws "Function argument 'out' already
+		// declared"). Since playfx sets i_out/out/outbus to the same bus index
+		// anyway, these only need a single "out" control, used for both the
+		// In.ar read and the ReplaceOut.ar write.
 
 		// Simple built-in reverb (FreeVerb, ships with stock SC -- no
 		// sc3-plugins needed). mix is the wet/dry blend, the parameter a
 		// MIDI knob would typically control.
-		SynthDef(\channelReverb, { |i_out, out, mix = 0.3, room = 0.5, damp = 0.5|
-			var sig = In.ar(i_out, 1);
+		SynthDef(\channelReverb, { |out, mix = 0.3, room = 0.5, damp = 0.5|
+			var sig = In.ar(out, 1);
 			ReplaceOut.ar(out, FreeVerb.ar(sig, mix, room, damp));
 		}).add;
 
 		// Delay/echo. CombN has no built-in dry/wet control, so it's blended
 		// manually, same knob-friendly mix param as the other channel fx.
-		SynthDef(\channelDelay, { |i_out, out, mix = 0.3, delayTime = 0.3, decayTime = 2|
-			var sig = In.ar(i_out, 1);
+		SynthDef(\channelDelay, { |out, mix = 0.3, delayTime = 0.3, decayTime = 2|
+			var sig = In.ar(out, 1);
 			var wet = CombN.ar(sig, 1.0, delayTime, decayTime);
 			ReplaceOut.ar(out, (sig * (1 - mix)) + (wet * mix));
 		}).add;
 
 		// Distortion via tanh waveshaping. drive 0-1 scales into saturation;
 		// mix blends against the dry signal like the others.
-		SynthDef(\channelDistortion, { |i_out, out, mix = 0.3, drive = 0.5|
-			var sig = In.ar(i_out, 1);
+		SynthDef(\channelDistortion, { |out, mix = 0.3, drive = 0.5|
+			var sig = In.ar(out, 1);
 			var driven = (sig * (1 + (drive * 20))).tanh;
 			ReplaceOut.ar(out, (sig * (1 - mix)) + (driven * mix));
 		}).add;

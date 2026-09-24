@@ -238,7 +238,11 @@ SCClip {
 				numRows ? 4,   // Default 4 rows for clips
 				numCols ? 8    // Default 8 columns (channels)
 			);
-			controller.connect(deviceName ? "Launchpad Mini");
+			// connect returns nil on failure (e.g. device not found) -- capture
+			// that here so connectController correctly reports failure too,
+			// instead of always returning the (already non-nil) controller
+			// instance regardless of whether connect actually succeeded.
+			controller = controller.connect(deviceName ? "Launchpad Mini");
 		}
 		{
 			"Unknown controller type: %".format(controllerType).error;
@@ -605,7 +609,8 @@ SCClip {
 							slot.loopLengthSamples = slotData[\loopLengthSamples];
 
 							// Set slot state (typically \stopped for saved clips)
-							if (slotData[\state] == \playing, {
+							// Queued states are transient (their scheduled action is gone)
+							if ([\playing, \queuedToPlay, \queuedToStop].includes(slotData[\state]), {
 								slot.setState(\stopped);  // Don't auto-play on load
 							}, {
 								slot.setState(slotData[\state]);

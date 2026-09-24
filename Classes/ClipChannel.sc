@@ -19,6 +19,7 @@ ClipChannel {
 	var <isSoloed;  // ddwMixerChannel has no solo concept -- tracked here; actual
 	                // cross-channel silencing is done by ClipGrid:soloChannel/unSoloChannel
 	var <hardwareInputIndex;  // Which hardware input this channel reads from (nil = no input)
+	var <>slotStateAction;  // Optional callback { |slotIndex, newState| } (e.g. grid controller LEDs)
 
 	*new { |channelIndex, numSlots = 8, transport, masterChannel, server, hardwareInputIndex|
 		^super.newCopyArgs(
@@ -133,12 +134,17 @@ ClipChannel {
 	stopSlot { |slotIndex|
 		var slot = this.getSlot(slotIndex);
 		if (slot.notNil, {
-			if (slot.isPlaying or: { slot.isOverdubbing }, {
+			case
+			{ slot.isPlaying or: { slot.isOverdubbing } } {
 				var nextBeat = transport.nextQuant;
 				slot.stop(nextBeat);
-			}, {
+			}
+			{ slot.isQueuedToPlay } {
+				slot.cancelPlay;
+			}
+			{
 				"ClipChannel[%]: Slot % not playing (%)".format(channelIndex, slotIndex, slot.state).warn;
-			});
+			};
 		});
 	}
 
@@ -149,6 +155,7 @@ ClipChannel {
 				var nextBeat = transport.nextQuant;
 				slot.stop(nextBeat);
 			});
+			if (slot.isQueuedToPlay, { slot.cancelPlay });
 		};
 	}
 
@@ -234,9 +241,8 @@ ClipChannel {
 
 	// Callback when a slot changes state (for LED updates, etc.)
 	slotStateChanged { |slotIndex, newState|
-		// Override this in subclasses or set a callback function
-		// Default: just post to console
-		// "ClipChannel[%]: Slot % -> %".format(channelIndex, slotIndex, newState).postln;
+		// Set slotStateAction to react to slot state changes
+		slotStateAction.value(slotIndex, newState);
 	}
 
 	// Query methods

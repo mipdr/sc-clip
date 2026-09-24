@@ -205,6 +205,7 @@ ClipGridController {
 		{ state == \playing }      { [channelColor, \solid] }
 		{ state == \stopped }      { [channelColor, \slow] }   // Slow blink
 		{ state == \overdubbing }  { [channelColor, \solid] }
+		{ state == \queuedToPlay } { [channelColor, \fast] }
 		{ state == \queuedToStop } { [channelColor, \fast] }
 		{ [\off, \solid] };  // Default
 	}
@@ -269,8 +270,8 @@ ClipGridController {
 		var slowPhase = beat.floor % 2;        // Toggle every beat (1Hz)
 
 		ledStates.keysValuesDo { |key, state|
-			var row = key div 100;
-			var col = key mod 100;
+			var row = key.div(100);
+			var col = key % 100;
 			var color = state[\color];
 			var blinkMode = state[\blinkMode];
 			var shouldBeOn;
@@ -304,7 +305,7 @@ ClipGridController {
 	// Install callbacks on all channels
 	installCallbacks {
 		grid.channels.do { |channel, chanIdx|
-			channel.slotStateChanged = { |slotIdx, newState|
+			channel.slotStateAction = { |slotIdx, newState|
 				this.onSlotStateChanged(chanIdx, slotIdx, newState);
 			};
 		};
