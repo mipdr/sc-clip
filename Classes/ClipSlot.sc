@@ -87,6 +87,12 @@ ClipSlot {
 				"ClipSlot[%,%]: Buffer % ready"
 					.format(channel.channelIndex, slotIndex, buf.bufnum)
 					.postln;
+				ClipDebugLogger.logBufferAlloc(
+					channel.channelIndex,
+					slotIndex,
+					loopLengthSamples,
+					buf.bufnum
+				);
 				this.setState(\armed);
 			}
 		);
@@ -113,22 +119,46 @@ ClipSlot {
 	// Internal: actually start the recording synth
 	startRecording {
 		var inputBus = channel.inputBus;
+		var args;
 
 		"ClipSlot[%,%]: Starting recording..."
 			.format(channel.channelIndex, slotIndex)
 			.postln;
 
-		// Create recorder synth in the recorder group
-		recorderSynth = Synth(\clipRecorder, [
+		args = [
 			\inBus, inputBus,
 			\bufnum, buffer.bufnum,
 			\loop, 1,
 			\mode, 0  // 0 = fresh recording
-		], channel.recorderGroup, \addToTail);
+		];
+
+		// Create recorder synth in the recorder group
+		recorderSynth = Synth(\clipRecorder, args, channel.recorderGroup, \addToTail);
+
+		ClipDebugLogger.logSynthCreate(
+			\clipRecorder,
+			channel.channelIndex,
+			slotIndex,
+			recorderSynth,
+			args
+		);
+		ClipDebugLogger.logRecordStart(
+			channel.channelIndex,
+			slotIndex,
+			loopLengthBeats,
+			buffer.bufnum
+		);
 
 		this.setState(\recording);
 
 		// Schedule transition to playing after loop completes
+		ClipDebugLogger.logSchedule(
+			\finishRecording,
+			channel.transport.beats + loopLengthBeats,
+			channel.channelIndex,
+			slotIndex,
+			"after % beats".format(loopLengthBeats)
+		);
 		channel.transport.scheduleAfterBeats(loopLengthBeats, {
 			this.finishRecording;
 		});
@@ -137,6 +167,18 @@ ClipSlot {
 	// Internal: finish recording and start playback
 	finishRecording {
 		if (recorderSynth.notNil, {
+			ClipDebugLogger.logSynthFree(
+				\clipRecorder,
+				channel.channelIndex,
+				slotIndex,
+				recorderSynth,
+				"recording finished"
+			);
+			ClipDebugLogger.logRecordEnd(
+				channel.channelIndex,
+				slotIndex,
+				loopLengthBeats * 60 / channel.transport.tempo
+			);
 			recorderSynth.free;
 			recorderSynth = nil;
 		});
@@ -151,6 +193,11 @@ ClipSlot {
 	// Start playback (called by transport at quantized time)
 	play { |atBeat|
 		if (state != \stopped, {
+			ClipDebugLogger.logWarning(
+				\slot,
+				"Cannot play slot[%,%] - wrong state".format(channel.channelIndex, slotIndex),
+				"state: % (expected: stopped)".format(state)
+			);
 			"ClipSlot: Cannot play - slot is % (must be stopped)".format(state).warn;
 			^this;
 		});
@@ -160,6 +207,13 @@ ClipSlot {
 		// player, orphaning the first (it keeps looping, untracked, after stop).
 		this.setState(\queuedToPlay);
 
+		ClipDebugLogger.logSchedule(
+			\startPlayback,
+			atBeat,
+			channel.channelIndex,
+			slotIndex,
+			"queued to play"
+		);
 		channel.transport.scheduleAtBeat(atBeat, {
 			// Skip if the slot was cleared/changed while queued
 			if (state == \queuedToPlay, { this.startPlayback });
@@ -174,8 +228,14 @@ ClipSlot {
 	// Internal: actually start the playback synth
 	startPlayback {
 		var outputBus = channel.mixerChannel.inbus;  // ddwMixerChannel input bus
+		var args;
 
 		if (buffer.isNil, {
+			ClipDebugLogger.logError(
+				\slot,
+				"Cannot play slot[%,%] - no buffer".format(channel.channelIndex, slotIndex),
+				"state: %".format(state)
+			);
 			"ClipSlot: Cannot play - no buffer".error;
 			^this;
 		});
@@ -186,18 +246,45 @@ ClipSlot {
 
 		// Never drop a reference to a running player -- it would keep looping
 		if (playerSynth.notNil, {
+			ClipDebugLogger.logWarning(
+				\slot,
+				"Orphan player detected for slot[%,%]".format(channel.channelIndex, slotIndex),
+				"nodeID: % - freeing before creating new player".format(playerSynth.nodeID)
+			);
 			playerSynth.set(\gate, 0);
+			ClipDebugLogger.logSynthFree(
+				\clipPlayer,
+				channel.channelIndex,
+				slotIndex,
+				playerSynth,
+				"orphan cleanup"
+			);
 		});
 
-		// Create player synth in the looper group
-		playerSynth = Synth(\clipPlayer, [
+		args = [
 			\outBus, outputBus,
 			\bufnum, buffer.bufnum,
 			\rate, 1,
 			\loop, 1,
 			\gate, 1,
 			\amp, 1
-		], channel.looperGroup, \addToTail);
+		];
+
+		// Create player synth in the looper group
+		playerSynth = Synth(\clipPlayer, args, channel.looperGroup, \addToTail);
+
+		ClipDebugLogger.logSynthCreate(
+			\clipPlayer,
+			channel.channelIndex,
+			slotIndex,
+			playerSynth,
+			args
+		);
+		ClipDebugLogger.logPlayStart(
+			channel.channelIndex,
+			slotIndex,
+			buffer.bufnum
+		);
 
 		this.setState(\playing);
 	}
@@ -205,12 +292,24 @@ ClipSlot {
 	// Stop playback (called by transport at quantized time)
 	stop { |atBeat|
 		if (state != \playing and: { state != \overdubbing }, {
+			ClipDebugLogger.logWarning(
+				\slot,
+				"Cannot stop slot[%,%] - wrong state".format(channel.channelIndex, slotIndex),
+				"state: % (expected: playing or overdubbing)".format(state)
+			);
 			"ClipSlot: Cannot stop - not playing (state: %)".format(state).warn;
 			^this;
 		});
 
 		this.setState(\queuedToStop);
 
+		ClipDebugLogger.logSchedule(
+			\stopPlayback,
+			atBeat,
+			channel.channelIndex,
+			slotIndex,
+			"queued to stop"
+		);
 		channel.transport.scheduleAtBeat(atBeat, {
 			this.stopPlayback;
 		});
@@ -219,11 +318,25 @@ ClipSlot {
 	// Internal: actually stop the playback synth
 	stopPlayback {
 		if (playerSynth.notNil, {
+			ClipDebugLogger.logSynthFree(
+				\clipPlayer,
+				channel.channelIndex,
+				slotIndex,
+				playerSynth,
+				"normal stop"
+			);
 			playerSynth.set(\gate, 0);  // Trigger release envelope
 			playerSynth = nil;
 		});
 
 		if (recorderSynth.notNil, {
+			ClipDebugLogger.logSynthFree(
+				\clipRecorder,
+				channel.channelIndex,
+				slotIndex,
+				recorderSynth,
+				"stopped while overdubbing"
+			);
 			recorderSynth.free;
 			recorderSynth = nil;
 		});
@@ -238,8 +351,14 @@ ClipSlot {
 	// Start overdubbing (record + play simultaneously)
 	overdub {
 		var inputBus;
+		var args;
 
 		if (state != \playing, {
+			ClipDebugLogger.logWarning(
+				\slot,
+				"Cannot overdub slot[%,%] - wrong state".format(channel.channelIndex, slotIndex),
+				"state: % (expected: playing)".format(state)
+			);
 			"ClipSlot: Cannot overdub - not playing".warn;
 			^this;
 		});
@@ -250,13 +369,23 @@ ClipSlot {
 			.format(channel.channelIndex, slotIndex)
 			.postln;
 
-		// Add recorder synth in overdub mode
-		recorderSynth = Synth(\clipRecorder, [
+		args = [
 			\inBus, inputBus,
 			\bufnum, buffer.bufnum,
 			\loop, 1,
 			\mode, 2  // 2 = overdub mode (mix new with existing)
-		], channel.recorderGroup, \addToTail);
+		];
+
+		// Add recorder synth in overdub mode
+		recorderSynth = Synth(\clipRecorder, args, channel.recorderGroup, \addToTail);
+
+		ClipDebugLogger.logSynthCreate(
+			\clipRecorder,
+			channel.channelIndex,
+			slotIndex,
+			recorderSynth,
+			args
+		);
 
 		this.setState(\overdubbing);
 	}
@@ -264,11 +393,23 @@ ClipSlot {
 	// Stop overdubbing (keep playing)
 	stopOverdub {
 		if (state != \overdubbing, {
+			ClipDebugLogger.logWarning(
+				\slot,
+				"Cannot stop overdub on slot[%,%] - wrong state".format(channel.channelIndex, slotIndex),
+				"state: % (expected: overdubbing)".format(state)
+			);
 			"ClipSlot: Not overdubbing".warn;
 			^this;
 		});
 
 		if (recorderSynth.notNil, {
+			ClipDebugLogger.logSynthFree(
+				\clipRecorder,
+				channel.channelIndex,
+				slotIndex,
+				recorderSynth,
+				"overdub stopped"
+			);
 			recorderSynth.free;
 			recorderSynth = nil;
 		});
@@ -282,9 +423,16 @@ ClipSlot {
 
 	// Clear slot (free buffer and synths)
 	clear {
+		var bufnum = if (buffer.notNil, { buffer.bufnum }, { nil });
+
 		this.stopPlayback;
 
 		if (buffer.notNil, {
+			ClipDebugLogger.logBufferFree(
+				channel.channelIndex,
+				slotIndex,
+				bufnum
+			);
 			buffer.free;
 			buffer = nil;
 		});
@@ -307,6 +455,18 @@ ClipSlot {
 		"ClipSlot[%,%]: % -> %"
 			.format(channel.channelIndex, slotIndex, oldState, newState)
 			.postln;
+
+		ClipDebugLogger.logSlotState(
+			channel.channelIndex,
+			slotIndex,
+			oldState,
+			newState,
+			"buffer: %, playerSynth: %, recorderSynth: %".format(
+				if (buffer.notNil, { buffer.bufnum }, { "nil" }),
+				if (playerSynth.notNil, { playerSynth.nodeID }, { "nil" }),
+				if (recorderSynth.notNil, { recorderSynth.nodeID }, { "nil" })
+			)
+		);
 
 		// Notify channel/grid of state change (for LED updates, etc.)
 		channel.slotStateChanged(slotIndex, newState);

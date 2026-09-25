@@ -214,6 +214,40 @@ SCClip {
 		grid.printStatus;
 	}
 
+	// Debug logging controls
+	enableDebug { |level = \normal|
+		ClipDebugLogger.enable;
+		ClipDebugLogger.setLevel(level);
+	}
+
+	disableDebug {
+		ClipDebugLogger.disable;
+	}
+
+	printDebugHistory { |numEntries|
+		ClipDebugLogger.printHistory(numEntries);
+	}
+
+	printDebugSummary {
+		ClipDebugLogger.printSummary;
+	}
+
+	printActiveSynths {
+		ClipDebugLogger.printActiveSynths;
+	}
+
+	checkForOrphans {
+		^ClipDebugLogger.checkForOrphans;
+	}
+
+	saveDebugLog { |path|
+		ClipDebugLogger.saveToFile(path);
+	}
+
+	clearDebugLog {
+		ClipDebugLogger.clear;
+	}
+
 	// Metering
 	meterMaster {
 		masterBus.mixerChannel.play;  // Play master to speakers and enable metering
