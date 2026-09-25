@@ -118,7 +118,8 @@ jobs:
           echo "Running save/load metadata tests"
           echo "========================================"
           export QT_QPA_PLATFORM=offscreen
-          timeout 60 sclang Tests/test_save_load_simple.scd
+          # Use cat to pipe to sclang stdin to force execution
+          timeout 60 bash -c "cat Tests/test_save_load_simple.scd | sclang"
           TEST_EXIT=$?
           if [ $TEST_EXIT -eq 0 ]; then
             echo ""
