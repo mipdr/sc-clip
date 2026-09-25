@@ -44,10 +44,10 @@ jobs:
 
           # Check if sclang is available
           if command -v sclang &> /dev/null; then
-            echo "✓ SuperCollider installed successfully"
+            echo "OK SuperCollider installed successfully"
             sclang -v 2>&1 | head -5 || true
           else
-            echo "❌ SuperCollider not found in PATH"
+            echo "ERROR: SuperCollider not found in PATH"
             echo "Available binaries:"
             find /usr -name "sclang" 2>/dev/null || true
             exit 1
@@ -70,7 +70,7 @@ Server.default.options.memSize = 8192 * 16;
 "SC-Clip test environment loaded".postln;
 EOF
 
-          echo "✓ SuperCollider configured"
+          echo "OK SuperCollider configured"
 
       - name: Install sc-clip to Extensions directory
         run: |
@@ -85,7 +85,7 @@ EOF
           # Copy (not symlink, as it's more reliable in CI)
           cp -r "$GITHUB_WORKSPACE" "$SC_EXTENSIONS_DIR/sc-clip"
 
-          echo "✓ sc-clip classes installed to $SC_EXTENSIONS_DIR/sc-clip"
+          echo "OK sc-clip classes installed to $SC_EXTENSIONS_DIR/sc-clip"
           ls -la "$SC_EXTENSIONS_DIR/sc-clip/Classes/" | head -10
 
       - name: Install ddwMixerChannel quark
@@ -116,7 +116,7 @@ fork {
 
     2.wait;
 
-    "✓ Installation complete".postln;
+    "OK Installation complete".postln;
     done = true;
     0.exit;
   } {|err|
@@ -139,7 +139,7 @@ EOF
 
           # Run with timeout
           timeout 120 sclang -D /tmp/install_quarks.scd || {
-            echo "⚠ Quark installation had issues, but continuing..."
+            echo "WARNING: Quark installation had issues, but continuing..."
           }
 
       - name: Start JACK server
@@ -157,7 +157,7 @@ EOF
           sleep 3
 
           # Verify JACK
-          jack_lsp || echo "⚠ JACK not responding, tests may fail"
+          jack_lsp || echo "WARNING: JACK not responding, tests may fail"
 
       - name: Start virtual display
         run: |
@@ -184,7 +184,7 @@ EOF
 
           # Quick compilation check
           timeout 60 sclang -D scripts/test-compile.scd || {
-            echo "❌ Class compilation failed"
+            echo "ERROR: Class compilation failed"
             exit 1
           }
 
@@ -203,17 +203,17 @@ EOF
           # Check result
           if [ $TEST_EXIT -eq 0 ]; then
             echo ""
-            echo "✅ ✅ ✅ All tests PASSED ✅ ✅ ✅"
+            echo "PASS PASS PASS All tests PASSED PASS PASS PASS"
             echo ""
             exit 0
           elif [ $TEST_EXIT -eq 124 ]; then
             echo ""
-            echo "❌ Tests TIMED OUT after 5 minutes"
+            echo "ERROR: Tests TIMED OUT after 5 minutes"
             echo ""
             exit 1
           else
             echo ""
-            echo "❌ Tests FAILED with exit code $TEST_EXIT"
+            echo "ERROR: Tests FAILED with exit code $TEST_EXIT"
             echo ""
             exit $TEST_EXIT
           fi
@@ -237,4 +237,4 @@ EOF
           rm -rf /tmp/sc-clip-test-session
           rm -f /tmp/install_quarks.scd
 
-          echo "✓ Cleanup complete"
+          echo "OK Cleanup complete"
