@@ -1,13 +1,11 @@
-/*
- * SC-Clip Save/Load Simple Test
- *
- * Simplified test that validates save/load metadata without requiring
- * a running audio server. This is suitable for CI environments.
- *
- * Exit codes:
- * 0 = All tests passed
- * 1 = Test failed
- */
+// SC-Clip Save/Load Simple Test
+//
+// Simplified test that validates save/load metadata without requiring
+// a running audio server. This is suitable for CI environments.
+//
+// Exit codes:
+// 0 = All tests passed
+// 1 = Test failed
 
 // Execute immediately - no Routine needed for non-server code
 (
