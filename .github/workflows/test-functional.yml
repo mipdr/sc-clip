@@ -15,12 +15,126 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install SuperCollider
+      - name: Install SuperCollider and dependencies
         run: |
-          echo "Installing SuperCollider..."
+          echo "========================================"
+          echo "Installing SuperCollider and dependencies"
+          echo "========================================"
           sudo apt-get update
-          sudo apt-get install -y supercollider-server supercollider-common || true
-          which sclang || echo "sclang not found"
+          sudo apt-get install -y \
+            software-properties-common \
+            wget \
+            unzip \
+            xvfb \
+            jackd2 \
+            libjack-jackd2-0 \
+            libsndfile1 \
+            libfftw3-3 \
+            libxt6 \
+            libavahi-client3 \
+            libasound2
+          sudo apt-get install -y supercollider-server supercollider-common supercollider-supernova || {
+            echo "Ubuntu package install failed, continuing anyway..."
+          }
+          if command -v sclang &> /dev/null; then
+            echo "OK SuperCollider installed successfully"
+            sclang -v 2>&1 | head -5 || true
+          else
+            echo "ERROR: SuperCollider not found in PATH"
+            echo "Available binaries:"
+            find /usr -name "sclang" 2>/dev/null || true
+            exit 1
+          fi
 
-      - name: Test passed
-        run: echo "Basic test passed"
+      - name: Install sc-clip to Extensions directory
+        run: |
+          echo "========================================"
+          echo "Installing sc-clip classes"
+          echo "========================================"
+          SC_EXTENSIONS_DIR="$HOME/.local/share/SuperCollider/Extensions"
+          mkdir -p "$SC_EXTENSIONS_DIR"
+          cp -r "$GITHUB_WORKSPACE" "$SC_EXTENSIONS_DIR/sc-clip"
+          echo "OK sc-clip classes installed to $SC_EXTENSIONS_DIR/sc-clip"
+          ls -la "$SC_EXTENSIONS_DIR/sc-clip/Classes/" | head -10
+
+      - name: Install ddwMixerChannel quark
+        run: |
+          echo "========================================"
+          echo "Installing ddwMixerChannel quark"
+          echo "========================================"
+          export QT_QPA_PLATFORM=offscreen
+          timeout 120 sclang -D scripts/ci-install-quarks.scd || {
+            echo "WARNING: Quark installation had issues, but continuing..."
+          }
+
+      - name: Start JACK server
+        run: |
+          echo "========================================"
+          echo "Starting JACK dummy audio server"
+          echo "========================================"
+          jackd -d dummy -r 48000 -p 1024 &
+          JACK_PID=$!
+          echo "JACK_PID=$JACK_PID" >> $GITHUB_ENV
+          sleep 3
+          jack_lsp || echo "WARNING: JACK not responding, tests may fail"
+
+      - name: Start virtual display
+        run: |
+          echo "========================================"
+          echo "Starting virtual display"
+          echo "========================================"
+          Xvfb :99 -screen 0 1024x768x24 &
+          XVFB_PID=$!
+          echo "XVFB_PID=$XVFB_PID" >> $GITHUB_ENV
+          sleep 2
+          export DISPLAY=:99
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
+      - name: Verify SC class compilation
+        run: |
+          echo "========================================"
+          echo "Verifying SC classes compile"
+          echo "========================================"
+          export QT_QPA_PLATFORM=offscreen
+          timeout 60 sclang -D scripts/test-compile.scd || {
+            echo "ERROR: Class compilation failed"
+            exit 1
+          }
+
+      - name: Run save/load functional tests
+        run: |
+          echo "========================================"
+          echo "Running save/load tests"
+          echo "========================================"
+          export QT_QPA_PLATFORM=offscreen
+          timeout 300 sclang -D Tests/test_save_load.scd
+          TEST_EXIT=$?
+          if [ $TEST_EXIT -eq 0 ]; then
+            echo ""
+            echo "PASS PASS PASS All tests PASSED PASS PASS PASS"
+            echo ""
+            exit 0
+          elif [ $TEST_EXIT -eq 124 ]; then
+            echo ""
+            echo "ERROR: Tests TIMED OUT after 5 minutes"
+            echo ""
+            exit 1
+          else
+            echo ""
+            echo "ERROR: Tests FAILED with exit code $TEST_EXIT"
+            echo ""
+            exit $TEST_EXIT
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Cleaning up..."
+          if [ -n "${JACK_PID:-}" ]; then
+            kill $JACK_PID 2>/dev/null || true
+          fi
+          if [ -n "${XVFB_PID:-}" ]; then
+            kill $XVFB_PID 2>/dev/null || true
+          fi
+          rm -rf /tmp/sc-clip-test-session
+          echo "OK Cleanup complete"
