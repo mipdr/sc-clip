@@ -9,7 +9,8 @@
  * 1 = Test failed
  */
 
-(
+// Wrap everything in a Routine that exits when done
+Routine({
 var testSessionPath = "/tmp/sc-clip-test-session-simple";
 var testPassed = true;
 var failureMessage = nil;
@@ -190,11 +191,12 @@ logPass.("Round-trip test passed");
 log.("Cleaning up...");
 ("rm -rf " ++ testSessionPath).systemCmd;
 
-// Print final results
+// Print final results and EXIT IMMEDIATELY
 "========================================".postln;
 if (testPassed, {
 	"ALL TESTS PASSED".postln;
 	"========================================".postln;
+	// Exit with success code
 	0.exit;
 }, {
 	"TESTS FAILED".postln;
@@ -202,6 +204,8 @@ if (testPassed, {
 		("Last failure: " ++ failureMessage).postln;
 	});
 	"========================================".postln;
+	// Exit with failure code
 	1.exit;
 });
-)
+}).play;
+
