@@ -9,8 +9,8 @@
  * 1 = Test failed
  */
 
-// Wrap everything in a Routine that exits when done
-Routine({
+// Execute immediately - no Routine needed for non-server code
+(
 var testSessionPath = "/tmp/sc-clip-test-session-simple";
 var testPassed = true;
 var failureMessage = nil;
@@ -207,5 +207,5 @@ if (testPassed, {
 	// Exit with failure code
 	1.exit;
 });
-}).play;
+)
 
