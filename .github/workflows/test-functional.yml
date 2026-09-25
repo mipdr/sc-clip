@@ -33,7 +33,12 @@ jobs:
             libxt6 \
             libavahi-client3 \
             libasound2
-          sudo apt-get install -y supercollider-server supercollider-common supercollider-supernova || {
+          # Install SC - need language package for sclang
+          sudo apt-get install -y \
+            supercollider-language \
+            supercollider-server \
+            supercollider-common \
+            supercollider-supernova || {
             echo "Ubuntu package install failed, continuing anyway..."
           }
           # Check common SC install locations
