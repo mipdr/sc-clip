@@ -36,17 +36,19 @@ jobs:
           sudo apt-get install -y supercollider-server supercollider-common supercollider-supernova || {
             echo "Ubuntu package install failed, continuing anyway..."
           }
-          # Find sclang and add to PATH if needed
-          SCLANG_PATH=$(find /usr -name "sclang" 2>/dev/null | head -1)
-          if [ -n "$SCLANG_PATH" ]; then
-            SCLANG_DIR=$(dirname "$SCLANG_PATH")
-            echo "Found sclang at: $SCLANG_PATH"
-            echo "$SCLANG_DIR" >> $GITHUB_PATH
-            export PATH="$SCLANG_DIR:$PATH"
-            echo "OK SuperCollider installed successfully"
-            $SCLANG_PATH -v 2>&1 | head -5 || true
+          # Check common SC install locations
+          if [ -f "/usr/bin/sclang" ]; then
+            echo "OK Found sclang at /usr/bin/sclang"
+            /usr/bin/sclang -v 2>&1 | head -5 || true
+          elif [ -f "/usr/local/bin/sclang" ]; then
+            echo "OK Found sclang at /usr/local/bin/sclang"
+            /usr/local/bin/sclang -v 2>&1 | head -5 || true
           else
-            echo "ERROR: SuperCollider not found"
+            echo "ERROR: sclang not found in expected locations"
+            echo "Checking dpkg for installed SC packages:"
+            dpkg -l | grep supercollider || true
+            echo "Looking for sclang (may take a while):"
+            find /usr -name "sclang" 2>/dev/null | head -5 || echo "Not found"
             exit 1
           fi
 
