@@ -15,7 +15,226 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Test echo
+      - name: Install SuperCollider and dependencies
         run: |
-          echo "Hello from functional tests"
-          echo "This is a test"
+          echo "========================================"
+          echo "Installing SuperCollider and dependencies"
+          echo "========================================"
+
+          sudo apt-get update
+
+          # Install basic dependencies
+          sudo apt-get install -y \
+            software-properties-common \
+            wget \
+            unzip \
+            xvfb \
+            jackd2 \
+            libjack-jackd2-0 \
+            libsndfile1 \
+            libfftw3-3 \
+            libxt6 \
+            libavahi-client3 \
+            libasound2
+
+          # Try Ubuntu package first (this works on 22.04)
+          sudo apt-get install -y supercollider-server supercollider-common supercollider-supernova || {
+            echo "Ubuntu package install failed, continuing anyway..."
+          }
+
+          # Check if sclang is available
+          if command -v sclang &> /dev/null; then
+            echo "✓ SuperCollider installed successfully"
+            sclang -v 2>&1 | head -5 || true
+          else
+            echo "❌ SuperCollider not found in PATH"
+            echo "Available binaries:"
+            find /usr -name "sclang" 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Configure SuperCollider for headless operation
+        run: |
+          echo "========================================"
+          echo "Configuring SuperCollider"
+          echo "========================================"
+
+          mkdir -p ~/.config/SuperCollider
+
+          # Create startup file that doesn't require GUI
+          cat > ~/.config/SuperCollider/startup.scd << 'EOF'
+// Headless startup configuration
+Server.default.options.numInputBusChannels = 4;
+Server.default.options.numOutputBusChannels = 2;
+Server.default.options.memSize = 8192 * 16;
+"SC-Clip test environment loaded".postln;
+EOF
+
+          echo "✓ SuperCollider configured"
+
+      - name: Install sc-clip to Extensions directory
+        run: |
+          echo "========================================"
+          echo "Installing sc-clip classes"
+          echo "========================================"
+
+          # Find SC extensions directory
+          SC_EXTENSIONS_DIR="$HOME/.local/share/SuperCollider/Extensions"
+          mkdir -p "$SC_EXTENSIONS_DIR"
+
+          # Copy (not symlink, as it's more reliable in CI)
+          cp -r "$GITHUB_WORKSPACE" "$SC_EXTENSIONS_DIR/sc-clip"
+
+          echo "✓ sc-clip classes installed to $SC_EXTENSIONS_DIR/sc-clip"
+          ls -la "$SC_EXTENSIONS_DIR/sc-clip/Classes/" | head -10
+
+      - name: Install ddwMixerChannel quark
+        run: |
+          echo "========================================"
+          echo "Installing ddwMixerChannel quark"
+          echo "========================================"
+
+          # Create installation script
+          cat > /tmp/install_quarks.scd << 'EOF'
+(
+var done = false;
+
+fork {
+  try {
+    "Installing ddwMixerChannel...".postln;
+
+    // Install quark
+    Quarks.install("ddwMixerChannel");
+
+    // Wait for installation
+    2.wait;
+
+    "Quark installed, recompiling class library...".postln;
+
+    // Recompile is needed for quarks to be available
+    thisProcess.recompile;
+
+    2.wait;
+
+    "✓ Installation complete".postln;
+    done = true;
+    0.exit;
+  } {|err|
+    ("ERROR: " ++ err).postln;
+    err.errorString.postln;
+    done = true;
+    1.exit;
+  };
+};
+
+// Timeout after 60 seconds
+SystemClock.sched(60, {
+  if (done.not) {
+    "ERROR: Installation timed out".postln;
+    1.exit;
+  };
+});
+)
+EOF
+
+          # Run with timeout
+          timeout 120 sclang -D /tmp/install_quarks.scd || {
+            echo "⚠ Quark installation had issues, but continuing..."
+          }
+
+      - name: Start JACK server
+        run: |
+          echo "========================================"
+          echo "Starting JACK dummy audio server"
+          echo "========================================"
+
+          # Start JACK with dummy backend (no real hardware needed)
+          jackd -d dummy -r 48000 -p 1024 &
+          JACK_PID=$!
+          echo "JACK_PID=$JACK_PID" >> $GITHUB_ENV
+
+          # Wait for JACK to initialize
+          sleep 3
+
+          # Verify JACK
+          jack_lsp || echo "⚠ JACK not responding, tests may fail"
+
+      - name: Start virtual display
+        run: |
+          echo "========================================"
+          echo "Starting virtual display"
+          echo "========================================"
+
+          # Start Xvfb
+          Xvfb :99 -screen 0 1024x768x24 &
+          XVFB_PID=$!
+          echo "XVFB_PID=$XVFB_PID" >> $GITHUB_ENV
+
+          sleep 2
+          export DISPLAY=:99
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
+      - name: Verify SC class compilation
+        run: |
+          echo "========================================"
+          echo "Verifying SC classes compile"
+          echo "========================================"
+
+          export QT_QPA_PLATFORM=offscreen
+
+          # Quick compilation check
+          timeout 60 sclang -D scripts/test-compile.scd || {
+            echo "❌ Class compilation failed"
+            exit 1
+          }
+
+      - name: Run save/load functional tests
+        run: |
+          echo "========================================"
+          echo "Running save/load tests"
+          echo "========================================"
+
+          export QT_QPA_PLATFORM=offscreen
+
+          # Run the test with timeout
+          timeout 300 sclang -D Tests/test_save_load.scd
+          TEST_EXIT=$?
+
+          # Check result
+          if [ $TEST_EXIT -eq 0 ]; then
+            echo ""
+            echo "✅ ✅ ✅ All tests PASSED ✅ ✅ ✅"
+            echo ""
+            exit 0
+          elif [ $TEST_EXIT -eq 124 ]; then
+            echo ""
+            echo "❌ Tests TIMED OUT after 5 minutes"
+            echo ""
+            exit 1
+          else
+            echo ""
+            echo "❌ Tests FAILED with exit code $TEST_EXIT"
+            echo ""
+            exit $TEST_EXIT
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Cleaning up..."
+
+          # Stop JACK
+          if [ -n "${JACK_PID:-}" ]; then
+            kill $JACK_PID 2>/dev/null || true
+          fi
+
+          # Stop Xvfb
+          if [ -n "${XVFB_PID:-}" ]; then
+            kill $XVFB_PID 2>/dev/null || true
+          fi
+
+          # Remove test artifacts
+          rm -rf /tmp/sc-clip-test-session
+          rm -f /tmp/install_quarks.scd
+
+          echo "✓ Cleanup complete"
