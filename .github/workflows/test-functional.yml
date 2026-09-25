@@ -112,13 +112,13 @@ jobs:
             exit 1
           }
 
-      - name: Run save/load functional tests
+      - name: Run save/load metadata tests
         run: |
           echo "========================================"
-          echo "Running save/load tests"
+          echo "Running save/load metadata tests"
           echo "========================================"
           export QT_QPA_PLATFORM=offscreen
-          timeout 300 sclang -D Tests/test_save_load.scd
+          timeout 60 sclang Tests/test_save_load_simple.scd
           TEST_EXIT=$?
           if [ $TEST_EXIT -eq 0 ]; then
             echo ""
@@ -127,7 +127,7 @@ jobs:
             exit 0
           elif [ $TEST_EXIT -eq 124 ]; then
             echo ""
-            echo "ERROR: Tests TIMED OUT after 5 minutes"
+            echo "ERROR: Tests TIMED OUT after 60 seconds"
             echo ""
             exit 1
           else

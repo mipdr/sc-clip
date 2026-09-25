@@ -74,11 +74,23 @@ if (File.exists(testSessionPath +/+ "session.scd"), {
 	0.5.wait;
 });
 
-// Boot server
+// Boot server with timeout
 log.("Booting server...");
 s.options.memSize = 8192 * 16;
 s.options.numInputBusChannels = 4;
 s.options.numOutputBusChannels = 2;
+
+// Set device to use JACK if available
+s.options.device = "JACK";
+
+// Add boot timeout
+fork {
+	30.wait;
+	if (s.serverRunning.not, {
+		"ERROR: Server boot timed out after 30 seconds".postln;
+		1.exit;
+	});
+};
 
 s.waitForBoot({
 	log.("Server booted successfully");
