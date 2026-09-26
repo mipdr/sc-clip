@@ -43,8 +43,9 @@ ClipLaunchpadMini : ClipGridController {
 		^bars * transport.beatsPerBar;
 	}
 
-	// Get current loop length in beats (overrides parent's loopLengthBeats)
-	getLoopLengthBeats {
+	// Loop length for new clips, from the clip length selector
+	// (overrides parent's fixed loopLengthBeats)
+	loopLengthBeats {
 		^this.barsToBeats(clipLengthBars);
 	}
 
@@ -180,69 +181,9 @@ ClipLaunchpadMini : ClipGridController {
 		if (row < clipLengthOptions.size, {
 			clipLengthBars = clipLengthOptions[row];
 			"ClipLaunchpadMini: Selected clip length: % bars (% beats)".format(
-				clipLengthBars, this.getLoopLengthBeats
+				clipLengthBars, this.loopLengthBeats
 			).postln;
 			this.updateClipLengthLEDs;
-		});
-	}
-
-	// Override parent's handleShortPress to use configurable clip length
-	handleShortPress { |row, col|
-		var slot = grid.getSlot(col, row);  // col=channel, row=slot index
-
-		if (slot.isNil, {
-			"ClipGridController: Invalid slot [%,%]".format(col, row).warn;
-			^this;
-		});
-
-		// State machine for short press (using configurable clip length)
-		case
-		{ slot.isEmpty } {
-			// Empty slot: arm and launch with current clip length
-			grid.armSlot(col, row, this.getLoopLengthBeats);
-			grid.launchSlot(col, row);
-		}
-		{ slot.isArmed } {
-			// Already armed: just launch
-			grid.launchSlot(col, row);
-		}
-		{ slot.isRecording } {
-			// Recording: ignore (wait for loop to complete)
-		}
-		{ slot.isPlaying or: { slot.isOverdubbing } } {
-			// Playing: stop
-			grid.stopSlot(col, row);
-		}
-		{ slot.isStopped } {
-			// Stopped: restart playback
-			grid.launchSlot(col, row);
-		}
-		{
-			// Queued to stop or other state: ignore
-		};
-	}
-
-	// Override parent's handleLongPress to use configurable clip length
-	handleLongPress { |row, col|
-		var slot = grid.getSlot(col, row);
-
-		if (slot.isNil, {
-			"ClipGridController: Invalid slot [%,%]".format(col, row).warn;
-			^this;
-		});
-
-		if (slot.hasAudio, {
-			// Has audio: clear, then arm and launch with current clip length
-			grid.clearSlot(col, row);
-
-			// Schedule re-arm after short delay to let clear complete
-			transport.scheduleAfterBeats(0.1, {
-				grid.armSlot(col, row, this.getLoopLengthBeats);
-				grid.launchSlot(col, row);
-			});
-		}, {
-			// Empty: just arm (don't launch) with current clip length
-			grid.armSlot(col, row, this.getLoopLengthBeats);
 		});
 	}
 

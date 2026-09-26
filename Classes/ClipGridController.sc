@@ -22,9 +22,9 @@ ClipGridController {
 	var <ledStates;         // IdentityDictionary: key -> (color, blinkMode)
 	var <ledCache;          // IdentityDictionary: key -> last sent value (optimization)
 	var <channelColors;     // Array of colors per channel
-	var <loopLengthBeats;   // Loop length in beats (hard-coded to 8)
+	var <loopLengthBeats;   // Loop length in beats for new clips (subclasses may override the getter)
 	// Hold time in seconds for a long press (default 1.0). A long press on a
-	// slot with audio clears it and records over it, so this must be well
+	// slot with audio deletes the clip, so this must be well
 	// clear of a normal tap -- it used to be 0.5 *beats*, i.e. 0.25 s at
 	// 120 BPM, short enough that an ordinary press to launch a clip wiped it.
 	// Seconds rather than beats also keeps it independent of tempo.
@@ -138,7 +138,7 @@ ClipGridController {
 		case
 		{ slot.isEmpty } {
 			// Empty slot: arm and launch
-			grid.armSlot(col, row, loopLengthBeats);
+			grid.armSlot(col, row, this.loopLengthBeats);
 			grid.launchSlot(col, row);
 		}
 		{ slot.isArmed } {
@@ -171,17 +171,15 @@ ClipGridController {
 		});
 
 		if (slot.hasAudio, {
-			// Has audio: clear, then arm and launch
+			// Has audio: clear the slot
 			grid.clearSlot(col, row);
 
-			// Schedule re-arm after short delay to let clear complete
-			transport.scheduleAfterBeats(0.1, {
-				grid.armSlot(col, row, loopLengthBeats);
-				grid.launchSlot(col, row);
-			});
+			// Don't re-arm: the long press fires on release, so re-arming here
+			// would start recording the moment the button is let go. The user
+			// presses again to record.
 		}, {
 			// Empty: just arm (don't launch)
-			grid.armSlot(col, row, loopLengthBeats);
+			grid.armSlot(col, row, this.loopLengthBeats);
 		});
 	}
 
