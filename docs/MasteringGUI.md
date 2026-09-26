@@ -233,14 +233,15 @@ This means you can:
 ### Adding Custom Controls
 
 ```supercollider
-// In ClipMasteringGUI class, add to createControls method:
+// In ClipMasteringGUI class, add a row to one of the section layouts
+// (e.g. compressorControls). The GUI is built with Qt layouts, so rows
+// stretch with the window -- no fixed Rects needed. param registers the
+// row in controlViews and returns its layout:
 
-controlViews[\myParam] = EZSlider(parent, Rect(40, yPos, 380, 25),
-    "My Parameter",
+this.param(\myParam, "My Parameter",
     ControlSpec(0, 100, \lin, 1, 50, "units"),
-    { |ez| /* callback */ },
-    labelWidth: 100, numberWidth: 60
-);
+    { |param| /* callback, param.value is the current value */ }
+),
 ```
 
 ### Adding VU Meters

@@ -3,6 +3,7 @@
  *
  * Native SuperCollider GUI for the mastering chain.
  * Features Max-style signal flow diagram and interactive controls.
+ * Built with Qt layouts, so the window can be freely resized/maximized.
  *
  * Usage:
  *   ~gui = ClipMasteringGUI(~clip);
@@ -21,6 +22,23 @@ ClipMasteringGUI {
 		^super.newCopyArgs(clipInstance).init;
 	}
 
+	// Colors -- set explicitly (plus a dark palette on the window) so the
+	// GUI reads the same regardless of the desktop's Qt theme
+	*textColor { ^Color.gray(0.85) }
+	*backgroundColor { ^Color.gray(0.08) }
+	*panelColor { ^Color.gray(0.11) }
+	*fieldColor { ^Color.gray(0.18) }
+
+	*palette {
+		^QPalette.dark
+			.window_(this.backgroundColor)
+			.windowText_(this.textColor)
+			.base_(this.fieldColor)
+			.baseText_(this.textColor)
+			.button_(Color.gray(0.25))
+			.buttonText_(this.textColor);
+	}
+
 	init {
 		controlViews = Dictionary.new;
 	}
@@ -31,46 +49,63 @@ ClipMasteringGUI {
 			^this;
 		});
 
+		// SCClip adds the mastering chain at boot, so reflect its actual state
+		isActive = clip.masterBus.eqSynth.notNil;
+
 		this.createWindow;
+		window.view.palette = ClipMasteringGUI.palette;
 		this.createSignalFlowView;
-		this.createControls;
+
+		window.layout = VLayout(
+			[signalFlowView, stretch: 1],
+			[this.createControls, stretch: 3]
+		).margins_(20).spacing_(20);
 
 		window.front;
 	}
 
 	createWindow {
-		window = Window("SC-Clip Mastering Chain", Rect(100, 100, 900, 600))
-			.background_(Color.gray(0.15))
+		window = Window("SC-Clip Mastering Chain", Rect(100, 100, 900, 700))
+			.background_(ClipMasteringGUI.backgroundColor)
 			.onClose_({ "Mastering GUI closed".postln; });
 	}
 
 	createSignalFlowView {
-		signalFlowView = UserView(window, Rect(20, 20, 860, 200))
-			.background_(Color.gray(0.1))
+		signalFlowView = UserView()
+			.background_(ClipMasteringGUI.panelColor)
+			.minHeight_(160)
+			.maxHeight_(300)
 			.animate_(true)
 			.frameRate_(30);
 
-		signalFlowView.drawFunc_({
-			this.drawSignalFlow;
+		signalFlowView.drawFunc_({ |view|
+			this.drawSignalFlow(view.bounds.width, view.bounds.height);
 		});
 	}
 
-	drawSignalFlow {
-		var x = 40, y = 100;
-		var boxWidth = 120, boxHeight = 60;
-		var spacing = 160;
+	// Everything is laid out relative to the view's current size, so the
+	// diagram scales with the window
+	drawSignalFlow { |width, height|
+		var stages = [\channels, \master, \eq, \comp, \limiter, \out];
+		var margin = 40;
+		var spacing = (width - (2 * margin)) / stages.size;
+		var boxWidth = spacing * 0.75;
+		var boxHeight = (height * 0.35).clip(30, 90);
+		var x = margin + ((spacing - boxWidth) / 2);
+		var y = (height - boxHeight) / 2;
+		var fontSize = (boxHeight * 0.2).clip(10, 16);
 
 		Pen.use {
 			Pen.smoothing_(true);
 
 			// Title
 			Pen.font_(Font("Helvetica", 14));
-			Pen.color_(Color.gray(0.7));
+			Pen.color_(ClipMasteringGUI.textColor);
 			Pen.stringAtPoint("Signal Flow: Channels → Master → EQ → Compressor → Limiter → Out",
-				Point(40, 20));
+				Point(margin, 20));
 
 			// Draw boxes for each stage
-			[\channels, \master, \eq, \comp, \limiter, \out].do { |stage, i|
+			stages.do { |stage, i|
 				var boxX = x + (i * spacing);
 				var boxColor, textColor;
 
@@ -95,13 +130,13 @@ ClipMasteringGUI {
 				Pen.stroke;
 
 				// Label
-				Pen.font_(Font("Helvetica-Bold", 12));
+				Pen.font_(Font("Helvetica-Bold", fontSize));
 				Pen.color_(textColor);
 				Pen.stringCenteredIn(stage.asString.toUpper,
-					Rect(boxX, y + 22, boxWidth, 20));
+					Rect(boxX, y, boxWidth, boxHeight));
 
 				// Connection arrow to next stage
-				if (i < 5, {
+				if (i < (stages.size - 1), {
 					this.drawArrow(
 						Point(boxX + boxWidth, y + (boxHeight / 2)),
 						Point(boxX + spacing, y + (boxHeight / 2)),
@@ -112,10 +147,10 @@ ClipMasteringGUI {
 
 			// Status indicator
 			Pen.font_(Font("Helvetica-Bold", 12));
-			Pen.color_(if (isActive, { Color.green }, { Color.gray(0.5) }));
+			Pen.color_(if (isActive, { Color.green }, { Color.gray(0.7) }));
 			Pen.stringAtPoint(
 				if (isActive, { "● MASTERING ACTIVE" }, { "○ Mastering Bypassed" }),
-				Point(40, 175)
+				Point(margin, height - 25)
 			);
 		};
 	}
@@ -136,44 +171,53 @@ ClipMasteringGUI {
 		Pen.fill;
 	}
 
+	// Returns the scrollable controls area. Its canvas uses layouts, so
+	// sliders stretch with the window and the EQ / dynamics columns sit side
+	// by side; the scrollbar only appears when the window is too short.
 	createControls {
-		var scrollView, contentView;
-		var yPos = 20;
-
-		// Scrollable control area
-		scrollView = ScrollView(window, Rect(20, 240, 860, 340))
-			.background_(Color.gray(0.12))
+		var scrollView = ScrollView()
+			.background_(ClipMasteringGUI.panelColor)
 			.hasHorizontalScroller_(false);
+		var canvas = View().background_(ClipMasteringGUI.panelColor);
 
-		contentView = View(scrollView, Rect(0, 0, 840, 900));
+		canvas.layout = VLayout(
+			this.masterControls,
+			HLayout(
+				[this.eqControls, stretch: 1],
+				[VLayout(this.compressorControls, this.limiterControls, nil).margins_(0).spacing_(20), stretch: 1]
+			).margins_(0).spacing_(40),
+			this.presets,
+			HLayout(this.applyButton, nil),
+			nil
+		).margins_(20).spacing_(20);
 
-		// Master controls
-		yPos = this.addMasterControls(contentView, yPos);
-
-		// EQ section
-		yPos = this.addEQControls(contentView, yPos);
-
-		// Compressor section
-		yPos = this.addCompressorControls(contentView, yPos);
-
-		// Limiter section
-		yPos = this.addLimiterControls(contentView, yPos);
-
-		// Presets
-		yPos = this.addPresets(contentView, yPos);
-
-		// Apply button
-		this.addApplyButton(contentView, yPos);
+		scrollView.canvas = canvas;
+		^scrollView;
 	}
 
-	addMasterControls { |parent, yPos|
-		StaticText(parent, Rect(20, yPos, 800, 30))
-			.string_("MASTER CONTROLS")
-			.font_(Font("Helvetica-Bold", 16))
-			.stringColor_(Color.white);
-		yPos = yPos + 40;
+	heading { |string, size = 14, color|
+		^StaticText()
+			.string_(string)
+			.font_(Font("Helvetica-Bold", size))
+			.stringColor_(color ?? { ClipMasteringGUI.textColor })
+			.fixedHeight_(size * 2);
+	}
 
-		Button(parent, Rect(20, yPos, 200, 30))
+	subheading { |string|
+		^StaticText().string_(string).stringColor_(ClipMasteringGUI.textColor).fixedHeight_(22);
+	}
+
+	// Creates a labelled slider row, registers it in controlViews, and
+	// returns its layout
+	param { |key, label, spec, action|
+		var param = ClipMasteringParam(label, spec, action);
+		controlViews[key] = param;
+		^param.layout;
+	}
+
+	masterControls {
+		var enableButton = Button()
+			.fixedSize_(220@30)
 			.states_([
 				["Enable Mastering Chain", Color.white, Color.new(0.3, 0.6, 0.3)],
 				["Disable Mastering Chain", Color.white, Color.new(0.6, 0.3, 0.3)]
@@ -187,168 +231,79 @@ ClipMasteringGUI {
 					isActive = false;
 				});
 				signalFlowView.refresh;
-			});
+			})
+			.value_(isActive.binaryValue);
 
-		controlViews[\masterLevel] = EZSlider(parent, Rect(20, yPos + 40, 400, 25),
-			"Master Level",
-			ControlSpec(-40, 12, \lin, 0.1, 0, "dB"),
-			{ |ez| clip.masterBus.setMasterLevel(ez.value) },
-			labelWidth: 120, numberWidth: 60
-		);
-
-		^(yPos + 100);
+		^VLayout(
+			this.heading("MASTER CONTROLS", 16, Color.white),
+			HLayout(enableButton, nil),
+			this.param(\masterLevel, "Master Level",
+				ControlSpec(-40, 12, \lin, 0.1, 0, "dB"),
+				{ |param| clip.masterBus.setMasterLevel(param.value) })
+		).margins_(0).spacing_(8);
 	}
 
-	addEQControls { |parent, yPos|
-		StaticText(parent, Rect(20, yPos, 800, 25))
-			.string_("PARAMETRIC EQ")
-			.font_(Font("Helvetica-Bold", 14))
-			.stringColor_(Color.new(0.8, 0.9, 1));
-		yPos = yPos + 35;
+	eqControls {
+		^VLayout(
+			this.heading("PARAMETRIC EQ"),
 
-		// Low shelf
-		StaticText(parent, Rect(40, yPos, 100, 20))
-			.string_("Low Shelf")
-			.stringColor_(Color.gray(0.8));
-		yPos = yPos + 25;
+			this.subheading("Low Shelf"),
+			this.param(\loFreq, "Frequency", ControlSpec(20, 500, \exp, 1, 80, "Hz")),
+			this.param(\loGain, "Gain", ControlSpec(-12, 12, \lin, 0.1, 0, "dB")),
 
-		controlViews[\loFreq] = EZSlider(parent, Rect(40, yPos, 380, 25), "Frequency",
-			ControlSpec(20, 500, \exp, 1, 80, "Hz"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
+			this.subheading("Parametric Mid"),
+			this.param(\midFreq, "Frequency", ControlSpec(200, 8000, \exp, 1, 1000, "Hz")),
+			this.param(\midGain, "Gain", ControlSpec(-12, 12, \lin, 0.1, 0, "dB")),
+			this.param(\midQ, "Q", ControlSpec(0.5, 5, \lin, 0.1, 1, "")),
 
-		controlViews[\loGain] = EZSlider(parent, Rect(40, yPos, 380, 25), "Gain",
-			ControlSpec(-12, 12, \lin, 0.1, 0, "dB"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 45;
-
-		// Mid parametric
-		StaticText(parent, Rect(40, yPos, 100, 20))
-			.string_("Parametric Mid")
-			.stringColor_(Color.gray(0.8));
-		yPos = yPos + 25;
-
-		controlViews[\midFreq] = EZSlider(parent, Rect(40, yPos, 380, 25), "Frequency",
-			ControlSpec(200, 8000, \exp, 1, 1000, "Hz"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
-
-		controlViews[\midGain] = EZSlider(parent, Rect(40, yPos, 380, 25), "Gain",
-			ControlSpec(-12, 12, \lin, 0.1, 0, "dB"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
-
-		controlViews[\midQ] = EZSlider(parent, Rect(40, yPos, 380, 25), "Q",
-			ControlSpec(0.5, 5, \lin, 0.1, 1, ""), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 45;
-
-		// High shelf
-		StaticText(parent, Rect(40, yPos, 100, 20))
-			.string_("High Shelf")
-			.stringColor_(Color.gray(0.8));
-		yPos = yPos + 25;
-
-		controlViews[\hiFreq] = EZSlider(parent, Rect(40, yPos, 380, 25), "Frequency",
-			ControlSpec(2000, 20000, \exp, 1, 8000, "Hz"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
-
-		controlViews[\hiGain] = EZSlider(parent, Rect(40, yPos, 380, 25), "Gain",
-			ControlSpec(-12, 12, \lin, 0.1, 0, "dB"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 60;
-
-		^yPos;
+			this.subheading("High Shelf"),
+			this.param(\hiFreq, "Frequency", ControlSpec(2000, 20000, \exp, 1, 8000, "Hz")),
+			this.param(\hiGain, "Gain", ControlSpec(-12, 12, \lin, 0.1, 0, "dB")),
+			nil
+		).margins_(0).spacing_(8);
 	}
 
-	addCompressorControls { |parent, yPos|
-		StaticText(parent, Rect(20, yPos, 800, 25))
-			.string_("GLUE COMPRESSOR")
-			.font_(Font("Helvetica-Bold", 14))
-			.stringColor_(Color.new(0.8, 0.9, 1));
-		yPos = yPos + 35;
-
-		controlViews[\thresh] = EZSlider(parent, Rect(40, yPos, 380, 25), "Threshold",
-			ControlSpec(-40, 0, \lin, 0.1, -12, "dB"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
-
-		controlViews[\ratio] = EZSlider(parent, Rect(40, yPos, 380, 25), "Ratio",
-			ControlSpec(1, 20, \lin, 0.1, 3, ":1"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
-
-		controlViews[\attack] = EZSlider(parent, Rect(40, yPos, 380, 25), "Attack",
-			ControlSpec(0.001, 0.1, \exp, 0.001, 0.01, "s"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
-
-		controlViews[\release] = EZSlider(parent, Rect(40, yPos, 380, 25), "Release",
-			ControlSpec(0.01, 2, \exp, 0.01, 0.3, "s"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
-
-		controlViews[\makeupGain] = EZSlider(parent, Rect(40, yPos, 380, 25), "Makeup Gain",
-			ControlSpec(-12, 24, \lin, 0.1, 0, "dB"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 60;
-
-		^yPos;
+	compressorControls {
+		^VLayout(
+			this.heading("GLUE COMPRESSOR"),
+			this.param(\thresh, "Threshold", ControlSpec(-40, 0, \lin, 0.1, -12, "dB")),
+			this.param(\ratio, "Ratio", ControlSpec(1, 20, \lin, 0.1, 3, ":1")),
+			this.param(\attack, "Attack", ControlSpec(0.001, 0.1, \exp, 0.001, 0.01, "s")),
+			this.param(\release, "Release", ControlSpec(0.01, 2, \exp, 0.01, 0.3, "s")),
+			this.param(\makeupGain, "Makeup Gain", ControlSpec(-12, 24, \lin, 0.1, 0, "dB"))
+		).margins_(0).spacing_(8);
 	}
 
-	addLimiterControls { |parent, yPos|
-		StaticText(parent, Rect(20, yPos, 800, 25))
-			.string_("BRICK-WALL LIMITER")
-			.font_(Font("Helvetica-Bold", 14))
-			.stringColor_(Color.new(0.8, 0.9, 1));
-		yPos = yPos + 35;
-
-		controlViews[\ceiling] = EZSlider(parent, Rect(40, yPos, 380, 25), "Ceiling",
-			ControlSpec(-6, 0, \lin, 0.1, -0.3, "dB"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 30;
-
-		controlViews[\dur] = EZSlider(parent, Rect(40, yPos, 380, 25), "Lookahead",
-			ControlSpec(0.001, 0.05, \exp, 0.001, 0.01, "s"), nil,
-			labelWidth: 100, numberWidth: 60);
-		yPos = yPos + 60;
-
-		^yPos;
+	limiterControls {
+		^VLayout(
+			this.heading("BRICK-WALL LIMITER"),
+			this.param(\ceiling, "Ceiling", ControlSpec(-6, 0, \lin, 0.1, -0.3, "dB")),
+			this.param(\dur, "Lookahead", ControlSpec(0.001, 0.05, \exp, 0.001, 0.01, "s"))
+		).margins_(0).spacing_(8);
 	}
 
-	addPresets { |parent, yPos|
-		var presetButtons;
+	presets {
+		var presetButton = { |name, preset, color|
+			Button()
+				.minHeight_(30)
+				.states_([[name, Color.white, color]])
+				.action_({ this.loadPreset(preset) });
+		};
 
-		StaticText(parent, Rect(20, yPos, 800, 25))
-			.string_("PRESETS")
-			.font_(Font("Helvetica-Bold", 14))
-			.stringColor_(Color.new(0.8, 0.9, 1));
-		yPos = yPos + 35;
-
-		presetButtons = HLayoutView(parent, Rect(40, yPos, 800, 35));
-
-		Button(presetButtons, 150@30)
-			.states_([["Neutral", Color.white, Color.gray(0.3)]])
-			.action_({ this.loadPreset(\neutral) });
-
-		Button(presetButtons, 150@30)
-			.states_([["Live Performance", Color.white, Color.new(0.3, 0.5, 0.7)]])
-			.action_({ this.loadPreset(\live) });
-
-		Button(presetButtons, 150@30)
-			.states_([["Punchy/Loud", Color.white, Color.new(0.7, 0.3, 0.3)]])
-			.action_({ this.loadPreset(\punchy) });
-
-		Button(presetButtons, 150@30)
-			.states_([["Warm/Subtle", Color.white, Color.new(0.6, 0.5, 0.3)]])
-			.action_({ this.loadPreset(\warm) });
-
-		^(yPos + 50);
+		^VLayout(
+			this.heading("PRESETS"),
+			HLayout(
+				presetButton.("Neutral", \neutral, Color.gray(0.3)),
+				presetButton.("Live Performance", \live, Color.new(0.3, 0.5, 0.7)),
+				presetButton.("Punchy/Loud", \punchy, Color.new(0.7, 0.3, 0.3)),
+				presetButton.("Warm/Subtle", \warm, Color.new(0.6, 0.5, 0.3))
+			)
+		).margins_(0).spacing_(8);
 	}
 
-	addApplyButton { |parent, yPos|
-		Button(parent, Rect(40, yPos, 200, 40))
+	applyButton {
+		^Button()
+			.fixedSize_(200@40)
 			.states_([["Apply Settings", Color.white, Color.new(0.2, 0.5, 0.8)]])
 			.font_(Font("Helvetica-Bold", 13))
 			.action_({ this.applySettings });
@@ -427,5 +382,70 @@ ClipMasteringGUI {
 
 	close {
 		if (window.notNil, { window.close });
+	}
+}
+
+/*
+ * ClipMasteringParam
+ *
+ * One labelled "slider + number box" row for ClipMasteringGUI. Unlike
+ * EZSlider (which positions its parts with fixed bounds), this lives in a
+ * layout, so the slider stretches with the window. Exposes the same
+ * value / value_ interface EZSlider did, so ~gui.controlViews[\key].value_(x)
+ * keeps working. value_ does not fire the action (same as EZSlider).
+ */
+
+ClipMasteringParam {
+	var <spec, <value, <>action;
+	var <labelView, <slider, <numberBox, <unitView;
+
+	*new { |label, spec, action|
+		^super.new.init(label, spec, action);
+	}
+
+	init { |label, argSpec, argAction|
+		spec = argSpec.asSpec;
+		action = argAction;
+
+		labelView = StaticText()
+			.string_(label)
+			.stringColor_(ClipMasteringGUI.textColor)
+			.fixedSize_(120@22);
+
+		slider = Slider()
+			.orientation_(\horizontal)
+			.minWidth_(60)
+			.fixedHeight_(22)
+			.action_({ |sl|
+				this.value_(spec.map(sl.value));
+				action.value(this);
+			});
+
+		numberBox = NumberBox()
+			.fixedSize_(70@22)
+			.background_(ClipMasteringGUI.fieldColor)
+			.normalColor_(ClipMasteringGUI.textColor)
+			.maxDecimals_(3)
+			.action_({ |nb|
+				this.value_(nb.value);
+				action.value(this);
+			});
+
+		unitView = StaticText()
+			.string_(spec.units)
+			.stringColor_(ClipMasteringGUI.textColor)
+			.fixedSize_(30@22);
+
+		this.value_(spec.default);
+	}
+
+	value_ { |val|
+		value = spec.constrain(val);
+		slider.value = spec.unmap(value);
+		numberBox.value = value;
+	}
+
+	layout {
+		^HLayout(labelView, [slider, stretch: 1], numberBox, unitView).margins_(0).spacing_(10);
 	}
 }

@@ -90,11 +90,11 @@ ClipSynthDefs {
 			var sig = In.ar(inBus, 2);
 
 			// Low shelf
-			sig = BPeakEQ.ar(sig, loFreq, 1, loGain);
+			sig = BLowShelf.ar(sig, loFreq, 1, loGain);
 			// Mid parametric
 			sig = BPeakEQ.ar(sig, midFreq, midQ, midGain);
 			// High shelf
-			sig = BPeakEQ.ar(sig, hiFreq, 1, hiGain);
+			sig = BHiShelf.ar(sig, hiFreq, 1, hiGain);
 
 			ReplaceOut.ar(outBus, sig);
 		}).add;

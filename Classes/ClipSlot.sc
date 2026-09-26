@@ -154,7 +154,7 @@ ClipSlot {
 		// Schedule transition to playing after loop completes
 		ClipDebugLogger.logSchedule(
 			\finishRecording,
-			channel.transport.beats + loopLengthBeats,
+			channel.transport.beat + loopLengthBeats,
 			channel.channelIndex,
 			slotIndex,
 			"after % beats".format(loopLengthBeats)
