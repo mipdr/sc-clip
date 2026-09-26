@@ -17,13 +17,18 @@ ClipGridController {
 	var <numCols;           // Number of columns (channels)
 	var <midiIn;            // Array of MIDIFunc instances
 	var <midiOut;           // MIDIOut instance
-	var <pressTracker;      // IdentityDictionary: buttonID -> press time (in beats)
+	var <pressTracker;      // IdentityDictionary: buttonID -> press time (in seconds)
 	var <blinkRoutine;      // Routine for LED blinking
 	var <ledStates;         // IdentityDictionary: key -> (color, blinkMode)
 	var <ledCache;          // IdentityDictionary: key -> last sent value (optimization)
 	var <channelColors;     // Array of colors per channel
 	var <loopLengthBeats;   // Loop length in beats (hard-coded to 8)
-	var <longPressThreshold; // Threshold in beats for long press (default 0.5)
+	// Hold time in seconds for a long press (default 1.0). A long press on a
+	// slot with audio clears it and records over it, so this must be well
+	// clear of a normal tap -- it used to be 0.5 *beats*, i.e. 0.25 s at
+	// 120 BPM, short enough that an ordinary press to launch a clip wiped it.
+	// Seconds rather than beats also keeps it independent of tempo.
+	var <>longPressThreshold;
 
 	*new { |grid, transport, numRows = 4, numCols = 8|
 		^super.newCopyArgs(
@@ -39,7 +44,7 @@ ClipGridController {
 			nil,                         // ledCache
 			nil,                         // channelColors
 			8,                           // loopLengthBeats (hard-coded)
-			0.5                          // longPressThreshold
+			1.0                          // longPressThreshold (seconds)
 		).init;
 	}
 
@@ -103,12 +108,12 @@ ClipGridController {
 
 		if (isNoteOn, {
 			// Track press time for long press detection
-			pressTracker[buttonID] = transport.clock.beats;
+			pressTracker[buttonID] = Main.elapsedTime;
 		}, {
 			// Button released - calculate duration
 			var pressTime = pressTracker[buttonID];
 			if (pressTime.notNil, {
-				var pressDuration = transport.clock.beats - pressTime;
+				var pressDuration = Main.elapsedTime - pressTime;
 				pressTracker.removeAt(buttonID);
 
 				if (pressDuration > longPressThreshold, {

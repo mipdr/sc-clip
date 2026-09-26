@@ -40,6 +40,26 @@ The diagram shows:
 
 This gives you a **visual representation** of your signal flow, similar to Max/MSP or Pd patch diagrams.
 
+### Level Meters (Right Side)
+
+Live post-fader levels for every channel (`Ch 1`...) and the `Master`
+(what actually goes to the hardware), stereo L/R per strip, on a -60..+6 dB
+scale:
+
+- **Dim bar** = peak, **bright bar** = RMS; green below -12 dB, yellow to
+  -3 dB, red above
+- **White line** = peak hold (1.5 s), with its value in dB under each strip
+- **Top box** lights red when that side hits 0 dBFS and stays lit until you
+  **click the meters** to reset
+
+Meters run only while the window is open. They're also usable on their own:
+
+```supercollider
+~meter = ~clip.createLevelMeter;       // ClipLevelMeter: peaks, rms, holds, clipped
+w = Window("Levels").layout_(VLayout(ClipLevelMeterView(~meter).view)).front;
+w.onClose = { ~meter.free };
+```
+
 ### Control Sections (Scrollable Area)
 
 1. **Master Controls**
@@ -242,18 +262,6 @@ this.param(\myParam, "My Parameter",
     ControlSpec(0, 100, \lin, 1, 50, "units"),
     { |param| /* callback, param.value is the current value */ }
 ),
-```
-
-### Adding VU Meters
-
-```supercollider
-// In drawSignalFlow method:
-var levels = ~clip.masterBus.getCurrentLevels;  // Would need to implement
-
-// Draw level meter bars
-Pen.fillColor_(Color.green);
-Pen.addRect(Rect(x, y, width * levels[0], height));
-Pen.fill;
 ```
 
 ### Custom Presets

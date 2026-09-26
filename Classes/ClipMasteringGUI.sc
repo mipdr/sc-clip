@@ -15,6 +15,7 @@ ClipMasteringGUI {
 	var <clip;
 	var <window;
 	var <signalFlowView;
+	var <levelMeter;
 	var <controlViews;
 	var <isActive = false;
 
@@ -56,18 +57,27 @@ ClipMasteringGUI {
 		window.view.palette = ClipMasteringGUI.palette;
 		this.createSignalFlowView;
 
-		window.layout = VLayout(
-			[signalFlowView, stretch: 1],
-			[this.createControls, stretch: 3]
+		// Level meters run only while the window is open (freed in onClose)
+		levelMeter = clip.createLevelMeter;
+
+		window.layout = HLayout(
+			[VLayout(
+				[signalFlowView, stretch: 1],
+				[this.createControls, stretch: 3]
+			).margins_(0).spacing_(20), stretch: 1],
+			this.createMeters
 		).margins_(20).spacing_(20);
 
 		window.front;
 	}
 
 	createWindow {
-		window = Window("SC-Clip Mastering Chain", Rect(100, 100, 900, 700))
+		window = Window("SC-Clip Mastering Chain", Rect(100, 100, 1250, 750))
 			.background_(ClipMasteringGUI.backgroundColor)
-			.onClose_({ "Mastering GUI closed".postln; });
+			.onClose_({
+				levelMeter !? { levelMeter.free; levelMeter = nil };
+				"Mastering GUI closed".postln;
+			});
 	}
 
 	createSignalFlowView {
@@ -193,6 +203,14 @@ ClipMasteringGUI {
 
 		scrollView.canvas = canvas;
 		^scrollView;
+	}
+
+	// Post-fader level meters for every channel and the master, full height
+	createMeters {
+		^VLayout(
+			this.heading("LEVELS"),
+			[ClipLevelMeterView(levelMeter).view, stretch: 1]
+		).margins_(0).spacing_(8);
 	}
 
 	heading { |string, size = 14, color|
