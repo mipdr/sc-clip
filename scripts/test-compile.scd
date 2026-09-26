@@ -33,6 +33,7 @@
 "  ClipMIDIClock -> %".format(ClipMIDIClock).postln;
 "  ClipLaunchpadMini -> %".format(ClipLaunchpadMini).postln;
 "  ClipTR8s4Channel -> %".format(ClipTR8s4Channel).postln;
+"  ClipTR8s3Channel -> %".format(ClipTR8s3Channel).postln;
 
 // Test dependency
 "Testing dependencies...".postln;
