@@ -78,6 +78,19 @@ jobs:
             echo "WARNING: Quark installation had issues, but continuing..."
           }
 
+          echo "========================================"
+          echo "Removing GUI-dependent extensions"
+          echo "========================================"
+          # Remove Document extensions that don't work in headless mode
+          QUARKS_DIR="$HOME/.local/share/SuperCollider/downloaded-quarks"
+          if [ -f "$QUARKS_DIR/ddwGUIEnhancements/Document-scanFor.sc" ]; then
+            echo "Removing $QUARKS_DIR/ddwGUIEnhancements/Document-scanFor.sc"
+            rm "$QUARKS_DIR/ddwGUIEnhancements/Document-scanFor.sc"
+            echo "OK Removed GUI-dependent Document extensions"
+          else
+            echo "INFO: Document-scanFor.sc not found, skipping removal"
+          fi
+
       - name: Start JACK server
         run: |
           echo "========================================"
