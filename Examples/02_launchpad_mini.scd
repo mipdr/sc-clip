@@ -17,7 +17,7 @@
  *   - Short press on empty slot: Arm and start recording (8 beats)
  *   - Short press on playing slot: Stop
  *   - Short press on stopped slot: Resume playback
- *   - Long press (>0.5 beats): Delete clip and restart recording
+ *   - Long press (>1 second): Delete clip and restart recording
  *
  * LED Feedback:
  *   - Off: Empty slot
@@ -200,8 +200,8 @@ Tips:
 // Refresh all LEDs to reflect current state
 ~controller.updateAllLEDs;
 
-// Change long press threshold (in beats)
-~controller.longPressThreshold = 1.0;  // Require 1 beat for long press
+// Change long press threshold (in seconds)
+~controller.longPressThreshold = 1.5;  // Require a 1.5 s hold for long press
 
 // Change loop length (hard-coded to 8 beats by default)
 ~controller.loopLengthBeats = 16;  // Use 16-beat loops

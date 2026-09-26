@@ -30,7 +30,15 @@ SCClip {
 	boot { |options, action|
 		var bootAction = {
 			this.init;
-			action.value(this);
+			// MixerChannel doesn't create its groups/synths (including the
+			// mastering chain's playfx synths) right away -- it queues them on
+			// MixerChannelReconstructor, which sends them over the next few
+			// moments. Calling action straight away let callers (e.g. session
+			// restore's setMasterEQ) .set synths the server hadn't created
+			// yet: "FAILURE IN SERVER /n_set Node ... not found", and the saved
+			// values were silently dropped. doWhenReady queues action behind
+			// everything init just queued, so it runs once those nodes exist.
+			masterBus.mixerChannel.doWhenReady({ action.value(this) });
 		};
 
 		if (server.serverRunning.not, {
@@ -246,6 +254,21 @@ SCClip {
 
 	clearDebugLog {
 		ClipDebugLogger.clear;
+	}
+
+	// GUI
+	showMasteringGUI {
+		^ClipMasteringGUI(this).show;
+	}
+
+	// Post-fader level meters for every channel plus the master (what goes
+	// to the hardware). Caller owns the result and should .free it.
+	createLevelMeter {
+		^ClipLevelMeter(
+			server,
+			grid.channels.collect { |channel| "Ch %".format(channel.channelIndex + 1) } ++ ["Master"],
+			grid.channels.collect(_.mixerChannel) ++ [masterBus.mixerChannel]
+		);
 	}
 
 	// Metering
@@ -490,8 +513,9 @@ SCClip {
 		}.play;
 	}
 
-	// Load session from disk
-	*load { |path, server, action|
+	// Load session from disk. options: server options to boot with (same as
+	// boot's), if the server isn't running yet.
+	*load { |path, server, action, options|
 		var sessionDir = PathName(path);
 		var metadataPath = sessionDir.fullPath +/+ "session.scd";
 		var sessionData;
@@ -521,7 +545,7 @@ SCClip {
 		);
 
 		// Boot and initialize with saved settings
-		scclip.boot(action: {
+		scclip.boot(options, {
 			scclip.restoreSessionData(sessionData, sessionDir.fullPath, action);
 		});
 

@@ -15,6 +15,7 @@ ClipSynthDefs {
 			this.addMasterEffects;
 			this.addChannelEffects;
 			this.addMetronome;
+			this.addLevelMeter;
 		};
 	}
 
@@ -90,11 +91,11 @@ ClipSynthDefs {
 			var sig = In.ar(inBus, 2);
 
 			// Low shelf
-			sig = BPeakEQ.ar(sig, loFreq, 1, loGain);
+			sig = BLowShelf.ar(sig, loFreq, 1, loGain);
 			// Mid parametric
 			sig = BPeakEQ.ar(sig, midFreq, midQ, midGain);
 			// High shelf
-			sig = BPeakEQ.ar(sig, hiFreq, 1, hiGain);
+			sig = BHiShelf.ar(sig, hiFreq, 1, hiGain);
 
 			ReplaceOut.ar(outBus, sig);
 		}).add;
@@ -172,6 +173,16 @@ ClipSynthDefs {
 			ReplaceOut.ar(out, (sig * (1 - mix)) + (driven * mix));
 		}).add;
 
+	}
+
+	// Level meter tap, played by ClipLevelMeter at the tail of a MixerChannel's
+	// fader group: the fader synth ReplaceOut's its post-fader signal back onto
+	// the mixer's inbus, so reading it there gives post-fader levels. Sends
+	// '/clipLevelMeter' [nodeID, replyID, peakL, rmsL, peakR, rmsR].
+	*addLevelMeter {
+		SynthDef(\clipLevelMeter, { |bus, rate = 30|
+			SendPeakRMS.kr(In.ar(bus, 2), rate, 3, '/clipLevelMeter');
+		}).add;
 	}
 
 	*addMetronome {
