@@ -37,6 +37,12 @@ This is **not a synthesizer** — it's a performance looper for hardware. Think 
 - ✅ Ableton Link support (sync with Live, other apps)
 - ✅ MIDI clock output (sync hardware sequencers)
 
+### Debugging & Troubleshooting
+- ✅ Comprehensive debug logging system
+- ✅ Orphan synth detection
+- ✅ State transition tracking
+- ✅ Exportable debug logs for issue reporting
+
 ## Requirements
 
 - **SuperCollider** 3.13 or later
@@ -180,6 +186,7 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for full details.
 See the `Examples/` directory:
 - `00_command_line_test.scd` — **Start here!** Complete command-line testing guide with metronome
 - `01_basic_setup.scd` — Comprehensive usage examples (recording, overdub, mixing, effects)
+- `debug_logging_example.scd` — **Debug logging** demonstration for troubleshooting
 - `02_launchpad_grid.scd` — Full Launchpad setup (coming in Phase 3)
 - `03_effects_chains.scd` — Per-channel FX demos (coming soon)
 - `04_link_sync.scd` — Ableton Link integration (coming soon)
@@ -189,6 +196,7 @@ See the `Examples/` directory:
 
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Complete architecture and design decisions
 - [SETUP.md](SETUP.md) — Installation, audio routing, MIDI setup
+- [docs/DebugLogging.md](docs/DebugLogging.md) — **Debug logging guide** for troubleshooting issues
 - `HelpSource/` — SC help files for each class
 
 ## Contributing
