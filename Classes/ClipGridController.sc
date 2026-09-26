@@ -24,6 +24,8 @@ ClipGridController {
 	var <channelColors;     // Array of colors per channel
 	var <loopLengthBeats;   // Loop length in beats (hard-coded to 8)
 	var <longPressThreshold; // Threshold in beats for long press (default 0.5)
+	var <deleteBufferTime;  // Time buffer in seconds after deletion before re-arming (default 2.0)
+	var <deleteLockout;     // IdentityDictionary: slotKey -> lockout end time (SystemClock)
 
 	*new { |grid, transport, numRows = 4, numCols = 8|
 		^super.newCopyArgs(
@@ -39,7 +41,9 @@ ClipGridController {
 			nil,                         // ledCache
 			nil,                         // channelColors
 			8,                           // loopLengthBeats (hard-coded)
-			0.5                          // longPressThreshold
+			0.5,                         // longPressThreshold
+			2.0,                         // deleteBufferTime (2 seconds)
+			nil                          // deleteLockout
 		).init;
 	}
 
@@ -47,6 +51,7 @@ ClipGridController {
 		pressTracker = IdentityDictionary.new;
 		ledStates = IdentityDictionary.new;
 		ledCache = IdentityDictionary.new;
+		deleteLockout = IdentityDictionary.new;
 		midiIn = List.new;
 
 		// Initialize default channel colors
@@ -123,9 +128,16 @@ ClipGridController {
 	// Handle short press (< threshold)
 	handleShortPress { |row, col|
 		var slot = grid.getSlot(col, row);  // col=channel, row=slot index
+		var slotKey = (col * 100) + row;
 
 		if (slot.isNil, {
 			"ClipGridController: Invalid slot [%,%]".format(col, row).warn;
+			^this;
+		});
+
+		// Check if slot is in delete lockout period
+		if (this.isSlotLockedOut(slotKey), {
+			// Ignore press during lockout period
 			^this;
 		});
 
@@ -159,6 +171,7 @@ ClipGridController {
 	// Handle long press (>= threshold)
 	handleLongPress { |row, col|
 		var slot = grid.getSlot(col, row);
+		var slotKey = (col * 100) + row;
 
 		if (slot.isNil, {
 			"ClipGridController: Invalid slot [%,%]".format(col, row).warn;
@@ -166,14 +179,12 @@ ClipGridController {
 		});
 
 		if (slot.hasAudio, {
-			// Has audio: clear, then arm and launch
+			// Has audio: clear the slot
 			grid.clearSlot(col, row);
 
-			// Schedule re-arm after short delay to let clear complete
-			transport.scheduleAfterBeats(0.1, {
-				grid.armSlot(col, row, loopLengthBeats);
-				grid.launchSlot(col, row);
-			});
+			// Set lockout period: prevent arming for deleteBufferTime seconds
+			// This prevents immediately starting recording when button is released
+			this.setSlotLockout(slotKey, deleteBufferTime);
 		}, {
 			// Empty: just arm (don't launch)
 			grid.armSlot(col, row, loopLengthBeats);
@@ -311,6 +322,33 @@ ClipGridController {
 		};
 
 		"ClipGridController: Installed state change callbacks".postln;
+	}
+
+	// Set a lockout period for a slot (prevents arming for specified duration)
+	setSlotLockout { |slotKey, duration|
+		var lockoutEndTime = Main.elapsedTime + duration;
+		deleteLockout[slotKey] = lockoutEndTime;
+
+		// Schedule cleanup of lockout entry after duration
+		SystemClock.sched(duration, {
+			deleteLockout.removeAt(slotKey);
+		});
+	}
+
+	// Check if a slot is currently locked out from being armed
+	isSlotLockedOut { |slotKey|
+		var lockoutEndTime = deleteLockout[slotKey];
+		if (lockoutEndTime.isNil, {
+			^false;  // No lockout
+		});
+
+		// Check if lockout has expired
+		if (Main.elapsedTime >= lockoutEndTime, {
+			deleteLockout.removeAt(slotKey);
+			^false;  // Lockout expired
+		});
+
+		^true;  // Still locked out
 	}
 
 	// Cleanup
