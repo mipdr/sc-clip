@@ -248,6 +248,11 @@ SCClip {
 		ClipDebugLogger.clear;
 	}
 
+	// GUI
+	showMasteringGUI {
+		^ClipMasteringGUI(this).show;
+	}
+
 	// Metering
 	meterMaster {
 		masterBus.mixerChannel.play;  // Play master to speakers and enable metering
