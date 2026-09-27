@@ -7,16 +7,16 @@
 
 ClipMasterBus {
 	var <mixerChannel;  // MixerChannel instance for master
-	var <masterGroup;   // Group for master effects
 	var <server;
 	var <eqSynth;
 	var <compSynth;
 	var <limiterSynth;
+	var <limiterCeiling = -0.3;  // dB
+	var <limiterDur = 0.01;      // lookahead, seconds
 
 	*new { |server|
 		^super.newCopyArgs(
 			nil,                      // mixerChannel
-			nil,                      // masterGroup
 			server ? Server.default,  // server
 			nil,                      // eqSynth
 			nil,                      // compSynth
@@ -25,11 +25,6 @@ ClipMasterBus {
 	}
 
 	init {
-		// Create master group
-		server.bind {
-			masterGroup = Group.new(server);
-		};
-
 		// Create master MixerChannel (stereo)
 		mixerChannel = MixerChannel.new(
 			\master,
@@ -44,42 +39,54 @@ ClipMasterBus {
 	}
 
 	// Add mastering chain (EQ → Compressor → Limiter)
+	//
+	// The synths go in the master MixerChannel's effect group (via playfx,
+	// same as ClipChannel.addEffect), which runs after every channel has
+	// written into the master inbus and before the master fader. A separate
+	// Group.new(server) would land at the head of the default group -- i.e.
+	// BEFORE the channels -- so the chain would process silence and the dry
+	// channel audio would be summed in after it, making EQ/comp/limiter inaudible.
+	// playfx adds each synth at the effect group's tail, so they run in the
+	// order they're created here.
 	addMasteringChain {
 		var bus = mixerChannel.inbus;
 
-		server.bind {
-			// EQ (neutral by default)
-			eqSynth = Synth(\masterEQ, [
-				\inBus, bus,
-				\outBus, bus,
-				\loFreq, 80,
-				\loGain, 0,
-				\midFreq, 1000,
-				\midGain, 0,
-				\midQ, 1,
-				\hiFreq, 8000,
-				\hiGain, 0
-			], masterGroup, \addToTail);
+		if (eqSynth.notNil, {
+			"ClipMasterBus: Mastering chain already active".postln;
+			^this;
+		});
 
-			// Glue compressor (gentle by default)
-			compSynth = Synth(\glueComp, [
-				\inBus, bus,
-				\outBus, bus,
-				\thresh, -12,
-				\ratio, 3,
-				\attack, 0.01,
-				\release, 0.3,
-				\makeupGain, 0
-			], masterGroup, \addAfter, eqSynth);
+		// EQ (neutral by default)
+		eqSynth = mixerChannel.playfx(\masterEQ, [
+			\inBus, bus,
+			\outBus, bus,
+			\loFreq, 80,
+			\loGain, 0,
+			\midFreq, 1000,
+			\midGain, 0,
+			\midQ, 1,
+			\hiFreq, 8000,
+			\hiGain, 0
+		]);
 
-			// Limiter (safety ceiling at -0.3 dB)
-			limiterSynth = Synth(\limiter, [
-				\inBus, bus,
-				\outBus, bus,
-				\ceiling, -0.3,
-				\dur, 0.01
-			], masterGroup, \addAfter, compSynth);
-		};
+		// Glue compressor (gentle by default)
+		compSynth = mixerChannel.playfx(\glueComp, [
+			\inBus, bus,
+			\outBus, bus,
+			\thresh, -12,
+			\ratio, 3,
+			\attack, 0.01,
+			\release, 0.3,
+			\makeupGain, 0
+		]);
+
+		// Limiter (safety ceiling at -0.3 dB)
+		limiterSynth = mixerChannel.playfx(\limiter, [
+			\inBus, bus,
+			\outBus, bus,
+			\ceiling, limiterCeiling,
+			\dur, limiterDur
+		]);
 
 		"ClipMasterBus: Mastering chain added (EQ → Compressor → Limiter)".postln;
 	}
@@ -140,10 +147,27 @@ ClipMasterBus {
 			^this;
 		});
 
-		if (ceiling.notNil, { limiterSynth.set(\ceiling, ceiling) });
-		if (dur.notNil, { limiterSynth.set(\dur, dur) });
+		if (ceiling.notNil, {
+			limiterCeiling = ceiling;
+			limiterSynth.set(\ceiling, ceiling);
+		});
 
-		"ClipMasterBus: Limiter updated (ceiling: % dB)".format(ceiling).postln;
+		// Limiter.ar allocates its lookahead buffer when the synth starts, so
+		// dur can't be .set on a running synth -- swap in a new limiter at the
+		// same spot in the chain instead. Only when it actually changes, since
+		// the swap causes a brief glitch (the limiter's 2*dur delay changes).
+		if (dur.notNil and: { dur != limiterDur }, {
+			limiterDur = dur;
+			limiterSynth = Synth.replace(limiterSynth, \limiter, [
+				\inBus, mixerChannel.inbus,
+				\outBus, mixerChannel.inbus,
+				\ceiling, limiterCeiling,
+				\dur, limiterDur
+			]);
+		});
+
+		"ClipMasterBus: Limiter updated (ceiling: % dB, lookahead: % s)"
+			.format(limiterCeiling, limiterDur).postln;
 	}
 
 	// Bypass mastering (mute/unmute master)
@@ -165,7 +189,6 @@ ClipMasterBus {
 	free {
 		this.removeMasteringChain;
 		mixerChannel.free;
-		masterGroup.free;
 	}
 
 }
