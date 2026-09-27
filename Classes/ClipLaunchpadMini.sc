@@ -7,7 +7,8 @@
  * Grid Layout (XY mode):
  *   - 8x8 grid: Columns 0-6 = channels (7 channels), Column 7 = controls
  *   - Rows 0-3 = clip slots (for columns 0-6)
- *   - Column 7, Rows 0-6 = clip length selector (1, 2, 4, 8, 16, 32, 64 bars)
+ *   - Column 7, Rows 0-6 = clip length selector (1, 2, 4, 8, 16, 32, 64 bars),
+ *     selected length lit orange, others green
  *   - Row 7, Col 7 = metronome on/off (lit amber when on)
  *   - MIDI note = (row * 16) + col
  *
@@ -15,6 +16,7 @@
  *   - 12 = off
  *   - 13 = red_low, 14 = red_mid, 15 = red_high
  *   - 29 = amber_low, 63 = amber_high
+ *   - 31 = orange
  *   - 62 = yellow
  *   - 60 = green
  */
@@ -256,10 +258,9 @@ ClipLaunchpadMini : ClipGridController {
 	// Update clip length selector LEDs (column 7, rows 0-6)
 	updateClipLengthLEDs {
 		clipLengthOptions.do { |bars, index|
-			var color;
-			// Selected length: amber/orange, unselected: green (closest to white on this device)
-			color = if (bars == clipLengthBars, \amber_high, \green);
-			this.sendLEDMessage(index, 7, color);
+			// Selected length: orange; unselected: green
+			this.sendLEDMessage(index, 7,
+				if (bars == clipLengthBars, \orange, \green));
 		};
 	}
 
@@ -277,11 +278,11 @@ ClipLaunchpadMini : ClipGridController {
 
 	updateAllLEDs {
 		super.updateAllLEDs;
-		// Update clip length selector LEDs
+		// Resend the control column unconditionally, like the rest of the grid
+		// here (the cache can be stale, e.g. after the init animation's final
+		// "off" frame)
+		8.do { |row| ledCache.removeAt((row * 100) + 7) };
 		this.updateClipLengthLEDs;
-		// Resend unconditionally, like the rest of the grid here (the cache
-		// can be stale, e.g. after the init animation's final "off" frame)
-		ledCache.removeAt(707);
 		this.updateMetronomeLED;
 	}
 
@@ -327,6 +328,7 @@ ClipLaunchpadMini : ClipGridController {
 		{ color == \red_high }   { 15 }   // Red full
 		{ color == \amber_low }  { 29 }   // Amber low
 		{ color == \amber_high } { 63 }   // Amber full
+		{ color == \orange }     { 31 }   // Red full + green low
 		{ color == \yellow }     { 62 }   // Yellow
 		{ color == \green }      { 60 }   // Green
 		{ 12 };  // Default: off
