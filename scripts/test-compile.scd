@@ -35,9 +35,15 @@
 "  ClipTR8s4Channel -> %".format(ClipTR8s4Channel).postln;
 "  ClipTR8s3Channel -> %".format(ClipTR8s3Channel).postln;
 
-// Test dependency
+// Test dependencies
 "Testing dependencies...".postln;
 "  MixerChannel -> %".format(MixerChannel).postln;
+
+// Test new classes (skip GUI classes in headless mode)
+"Testing meter classes...".postln;
+"  ClipLevelMeter -> %".format(ClipLevelMeter).postln;
+
+// Note: ClipMasteringGUI is skipped in headless mode as it requires a display
 
 "========================================".postln;
 "sc-clip: compilation test PASSED".postln;
