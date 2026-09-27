@@ -12,6 +12,7 @@ ClipSlot {
 	var <>buffer;
 	var <>loopLengthBeats;
 	var <>loopLengthSamples;  // Computed once, never recalculated (prevents drift)
+	var <loopStartBeat;  // Beat the loop's current run started at (its phase), nil when not running
 	var <recorderSynth;
 	var <playerSynth;
 	var <channel;  // Parent ClipChannel
@@ -24,6 +25,7 @@ ClipSlot {
 			nil,         // buffer
 			nil,         // loopLengthBeats
 			nil,         // loopLengthSamples
+			nil,         // loopStartBeat
 			nil,         // recorderSynth
 			nil,         // playerSynth
 			channel,     // channel
@@ -109,6 +111,10 @@ ClipSlot {
 			"ClipSlot: Cannot record - buffer not ready".error;
 			^this;
 		});
+
+		// Playback follows straight on from recording, so the recording's
+		// start is the loop's phase from here on
+		loopStartBeat = atBeat;
 
 		// Schedule recording to start at the specified beat
 		channel.transport.scheduleAtBeat(atBeat, {
@@ -206,6 +212,7 @@ ClipSlot {
 		// quantized start passes the check above again and schedules a second
 		// player, orphaning the first (it keeps looping, untracked, after stop).
 		this.setState(\queuedToPlay);
+		loopStartBeat = atBeat;
 
 		ClipDebugLogger.logSchedule(
 			\startPlayback,
@@ -439,6 +446,7 @@ ClipSlot {
 
 		loopLengthBeats = nil;
 		loopLengthSamples = nil;
+		loopStartBeat = nil;
 
 		"ClipSlot[%,%]: Cleared"
 			.format(channel.channelIndex, slotIndex)

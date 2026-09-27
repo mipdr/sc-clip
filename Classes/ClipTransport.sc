@@ -11,6 +11,8 @@ ClipTransport {
 	var <beatsPerBar;
 	var <timeSignature;  // e.g. [4, 4] for 4/4
 	var <quantization;  // Quant object for launch/stop timing
+	var <quantMode;  // How clip launches are quantized: \grid or \longestClip (see nextLaunchQuant)
+	var <>clipSource;  // Function returning all ClipSlots (set by ClipGrid) -- used by \longestClip
 	var <syncMode;  // \internal, \link, or \midiclock
 	var <server;
 	var <metronomeEnabled;
@@ -27,6 +29,8 @@ ClipTransport {
 			beatsPerBar,              // beatsPerBar
 			timeSignature ? [4, 4],   // timeSignature (default 4/4)
 			nil,                      // quantization
+			\grid,                    // quantMode
+			nil,                      // clipSource
 			\internal,                // syncMode
 			server ? Server.default,  // server
 			false,                    // metronomeEnabled
@@ -81,6 +85,22 @@ ClipTransport {
 		});
 	}
 
+	// Set how clip launches are quantized:
+	//   \grid        -- next multiple of the quantization setting (default)
+	//   \longestClip -- next time the longest running clip wraps back to its
+	//                   start, so e.g. a 4-bar clip launched while an 8-bar
+	//                   clip plays waits for the 8-bar phrase to restart.
+	//                   Falls back to \grid when no clip is running.
+	// Stops always use \grid.
+	setQuantMode { |mode|
+		if ([\grid, \longestClip].includes(mode).not, {
+			"ClipTransport: Unknown quant mode % (use \\grid or \\longestClip)".format(mode).error;
+			^this;
+		});
+		quantMode = mode;
+		"ClipTransport: Quant mode set to %".format(mode).postln;
+	}
+
 	// Get current beat
 	beat {
 		^clock.beats;
@@ -103,6 +123,36 @@ ClipTransport {
 			var nextQuantBeat = currentBeat.roundUp(quantBeats);
 			^nextQuantBeat;
 		});
+	}
+
+	// Get the beat at which a clip launch (play or record) should start,
+	// according to quantMode
+	nextLaunchQuant {
+		^switch(quantMode,
+			\longestClip, { this.nextLongestClipStart ? this.nextQuant },
+			{ this.nextQuant }
+		);
+	}
+
+	// Next beat at which the longest running clip starts its loop again,
+	// or nil if no clip is running. Queued-to-play clips count (at their
+	// scheduled start) so a scene of clips launched together stays aligned;
+	// queued-to-stop clips don't, since they're on their way out.
+	nextLongestClipStart {
+		var running, longest, cycles;
+
+		if (clipSource.isNil, { ^nil });
+
+		running = clipSource.value.select({ |slot|
+			[\recording, \playing, \overdubbing, \queuedToPlay].includes(slot.state)
+				and: { slot.loopStartBeat.notNil }
+				and: { slot.loopLengthBeats.notNil }
+		});
+		if (running.isEmpty, { ^nil });
+
+		longest = running.maxItem(_.loopLengthBeats);
+		cycles = ((clock.beats - longest.loopStartBeat) / longest.loopLengthBeats).ceil;
+		^longest.loopStartBeat + (cycles * longest.loopLengthBeats);
 	}
 
 	// Schedule a function at a specific beat (absolute time)

@@ -114,11 +114,11 @@ ClipChannel {
 		if (slot.notNil, {
 			case
 			{ slot.isArmed } {
-				var nextBeat = transport.nextQuant;
+				var nextBeat = transport.nextLaunchQuant;
 				slot.record(nextBeat);
 			}
 			{ slot.isStopped } {
-				var nextBeat = transport.nextQuant;
+				var nextBeat = transport.nextLaunchQuant;
 				slot.play(nextBeat);
 			}
 			{ slot.isEmpty } {

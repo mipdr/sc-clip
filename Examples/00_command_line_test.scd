@@ -248,6 +248,19 @@ s.meter;
 // Reset to 1 bar
 ~clip.setQuantization(4);
 
+// Quantize launches to the longest running clip: with an 8-bar clip
+// playing, a newly launched 4-bar clip waits until the 8-bar clip starts
+// over. With nothing playing it falls back to the quantization above.
+~clip.setQuantMode(\longestClip);
+~clip.armSlot(1, 0, 32);
+~clip.launchSlot(1, 0);  // Records an 8-bar loop
+// ...once it's playing:
+~clip.armSlot(1, 1, 16);
+~clip.launchSlot(1, 1);  // Waits for the 8-bar loop to restart
+
+// Back to plain beat-grid quantization
+~clip.setQuantMode(\grid);
+
 // ============================================================================
 // PART 10: SCENE LAUNCHING
 // ============================================================================
@@ -364,6 +377,8 @@ s.freeAll;
 ~clip.setQuantization(4);            // 1 bar
 ~clip.setQuantization(1);            // 1 beat
 ~clip.setQuantization(0);            // Immediate
+~clip.setQuantMode(\longestClip);    // Launch when the longest running clip restarts
+~clip.setQuantMode(\grid);           // Launch on the quantization grid (default)
 
 // SCENES
 ~clip.launchScene(slotIndex);        // Launch all slots at index

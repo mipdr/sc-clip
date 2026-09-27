@@ -52,6 +52,9 @@ ClipGrid {
 			);
 		});
 
+		// Lets the transport see every clip for \longestClip launch quantization
+		transport.clipSource = { channels.collect(_.slots).flatten };
+
 		"ClipGrid: Initialized % channels × % slots = % total slots"
 			.format(numChannels, numSlots, numChannels * numSlots)
 			.postln;

@@ -112,6 +112,11 @@ SCClip {
 		transport.setQuantization(beats);
 	}
 
+	// \grid (default) or \longestClip -- see ClipTransport:setQuantMode
+	setQuantMode { |mode|
+		transport.setQuantMode(mode);
+	}
+
 	// Grid controls
 	armSlot { |channelIndex, slotIndex, loopLengthBeats = 4|
 		grid.armSlot(channelIndex, slotIndex, loopLengthBeats);
@@ -385,6 +390,7 @@ SCClip {
 			}, {
 				transport.quantization.quant
 			}),
+			\quantMode -> transport.quantMode,
 			\syncMode -> transport.syncMode,
 			\metronomeEnabled -> transport.metronomeEnabled,
 			\metronomeAmp -> transport.metronomeAmp
@@ -568,6 +574,8 @@ SCClip {
 		}, {
 			this.setQuantization(sessionData[\transport][\quantization]);
 		});
+		// Sessions saved before quant modes existed have no \quantMode
+		this.setQuantMode(sessionData[\transport][\quantMode] ? \grid);
 
 		// Restore metronome state
 		if (sessionData[\transport][\metronomeEnabled], {
