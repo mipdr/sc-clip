@@ -5,23 +5,47 @@
  * Handles Launchpad-specific MIDI protocol, button mapping, and LED colors.
  *
  * Grid Layout (XY mode):
- *   - 8x8 grid: Columns 0-7 = channels, Rows 0-3 = clip indexes
- *   - Rows 4-7 reserved for future use
+ *   - 8x8 grid: Columns 0-6 = channels (7 channels), Column 7 = controls
+ *   - Rows 0-3 = clip slots (for columns 0-6)
+ *   - Column 7, Rows 0-6 = clip length selector (1, 2, 4, 8, 16, 32, 64 bars),
+ *     selected length lit orange, others green
+ *   - Row 7, Col 7 = metronome on/off (lit amber when on)
  *   - MIDI note = (row * 16) + col
- *   - Bottom-right pad (row 7, col 7): metronome on/off (lit amber when on)
  *
  * LED Colors (via velocity):
  *   - 12 = off
  *   - 13 = red_low, 14 = red_mid, 15 = red_high
  *   - 29 = amber_low, 63 = amber_high
+ *   - 31 = orange
  *   - 62 = yellow
  *   - 60 = green
  */
 
 ClipLaunchpadMini : ClipGridController {
+	var <clipLengthBars;      // Currently selected clip length in bars (1, 2, 4, 8, 16, 32, 64)
+	var <clipLengthOptions;   // Array of available clip lengths in bars
 
-	*new { |grid, transport, numRows = 4, numCols = 8|
-		^super.new(grid, transport, numRows, numCols);
+	*new { |grid, transport, numRows = 4, numCols = 7|
+		// Note: numCols = 7 for clip channels, column 7 is used for controls
+		^super.new(grid, transport, numRows, numCols).initClipLength;
+	}
+
+	// Initialize clip length settings
+	initClipLength {
+		// Available clip lengths in bars: 1, 2, 4, 8, 16, 32, 64
+		clipLengthOptions = [1, 2, 4, 8, 16, 32, 64];
+		// Default to 2 bars (index 1)
+		clipLengthBars = 2;
+	}
+
+	// Convert bars to beats based on current time signature
+	barsToBeats { |bars|
+		^bars * transport.beatsPerBar;
+	}
+
+	// Get current loop length in beats (overrides parent's loopLengthBeats)
+	getLoopLengthBeats {
+		^this.barsToBeats(clipLengthBars);
 	}
 
 	// Connect to Launchpad Mini
@@ -133,15 +157,93 @@ ClipLaunchpadMini : ClipGridController {
 		"ClipLaunchpadMini: MIDI responders installed".postln;
 	}
 
-	// The bottom-right pad (row 7, col 7) toggles the metronome. It is outside
-	// the clip area on grids smaller than 8x8; on a full 8x8 grid it takes
-	// precedence over clip slot [7,7].
+	// Handle button press - routes to clip length selector or metronome or parent
 	handleButtonPress { |row, col, velocity, isNoteOn|
+		// Column 7, rows 0-6: Clip length selector
+		if (col == 7 and: { row >= 0 } and: { row < clipLengthOptions.size }, {
+			if (isNoteOn, { this.selectClipLength(row) });
+			^this;
+		});
+
+		// Bottom-right pad (row 7, col 7): metronome toggle
 		if (row == 7 and: { col == 7 }, {
 			if (isNoteOn, { this.toggleMetronome });
 			^this;
 		});
+
+		// All other buttons: pass to parent for clip control
 		^super.handleButtonPress(row, col, velocity, isNoteOn);
+	}
+
+	// Select clip length based on row index in column 7
+	selectClipLength { |row|
+		if (row < clipLengthOptions.size, {
+			clipLengthBars = clipLengthOptions[row];
+			"ClipLaunchpadMini: Selected clip length: % bars (% beats)".format(
+				clipLengthBars, this.getLoopLengthBeats
+			).postln;
+			this.updateClipLengthLEDs;
+		});
+	}
+
+	// Override parent's handleShortPress to use configurable clip length
+	handleShortPress { |row, col|
+		var slot = grid.getSlot(col, row);  // col=channel, row=slot index
+
+		if (slot.isNil, {
+			"ClipGridController: Invalid slot [%,%]".format(col, row).warn;
+			^this;
+		});
+
+		// State machine for short press (using configurable clip length)
+		case
+		{ slot.isEmpty } {
+			// Empty slot: arm and launch with current clip length
+			grid.armSlot(col, row, this.getLoopLengthBeats);
+			grid.launchSlot(col, row);
+		}
+		{ slot.isArmed } {
+			// Already armed: just launch
+			grid.launchSlot(col, row);
+		}
+		{ slot.isRecording } {
+			// Recording: ignore (wait for loop to complete)
+		}
+		{ slot.isPlaying or: { slot.isOverdubbing } } {
+			// Playing: stop
+			grid.stopSlot(col, row);
+		}
+		{ slot.isStopped } {
+			// Stopped: restart playback
+			grid.launchSlot(col, row);
+		}
+		{
+			// Queued to stop or other state: ignore
+		};
+	}
+
+	// Override parent's handleLongPress to use configurable clip length
+	handleLongPress { |row, col|
+		var slot = grid.getSlot(col, row);
+
+		if (slot.isNil, {
+			"ClipGridController: Invalid slot [%,%]".format(col, row).warn;
+			^this;
+		});
+
+		if (slot.hasAudio, {
+			// Has audio: clear, then arm and launch with current clip length
+			grid.clearSlot(col, row);
+
+			// Schedule re-arm after short delay to let clear complete
+			transport.scheduleAfterBeats(0.1, {
+				grid.armSlot(col, row, this.getLoopLengthBeats);
+				grid.launchSlot(col, row);
+			});
+		}, {
+			// Empty: just arm (don't launch) with current clip length
+			grid.armSlot(col, row, this.getLoopLengthBeats);
+		});
 	}
 
 	toggleMetronome {
@@ -153,6 +255,15 @@ ClipLaunchpadMini : ClipGridController {
 		this.updateMetronomeLED;
 	}
 
+	// Update clip length selector LEDs (column 7, rows 0-6)
+	updateClipLengthLEDs {
+		clipLengthOptions.do { |bars, index|
+			// Selected length: orange; unselected: green
+			this.sendLEDMessage(index, 7,
+				if (bars == clipLengthBars, \orange, \green));
+		};
+	}
+
 	// Amber full is the closest this bi-color (red/green) device gets to white
 	updateMetronomeLED {
 		this.sendLEDMessage(7, 7, if (transport.metronomeEnabled, \amber_high, \off));
@@ -162,13 +273,16 @@ ClipLaunchpadMini : ClipGridController {
 	updateBlinkingLEDs {
 		super.updateBlinkingLEDs;
 		this.updateMetronomeLED;
+		// Clip length LEDs don't need blinking, but update if cache is stale
 	}
 
 	updateAllLEDs {
 		super.updateAllLEDs;
-		// Resend unconditionally, like the rest of the grid here (the cache
-		// can be stale, e.g. after the init animation's final "off" frame)
-		ledCache.removeAt(707);
+		// Resend the control column unconditionally, like the rest of the grid
+		// here (the cache can be stale, e.g. after the init animation's final
+		// "off" frame)
+		8.do { |row| ledCache.removeAt((row * 100) + 7) };
+		this.updateClipLengthLEDs;
 		this.updateMetronomeLED;
 	}
 
@@ -214,12 +328,13 @@ ClipLaunchpadMini : ClipGridController {
 		{ color == \red_high }   { 15 }   // Red full
 		{ color == \amber_low }  { 29 }   // Amber low
 		{ color == \amber_high } { 63 }   // Amber full
+		{ color == \orange }     { 31 }   // Red full + green low
 		{ color == \yellow }     { 62 }   // Yellow
 		{ color == \green }      { 60 }   // Green
 		{ 12 };  // Default: off
 	}
 
-	// Override channel colors for Launchpad's palette
+	// Override channel colors for Launchpad's palette (7 channels)
 	initChannelColors {
 		channelColors = [
 			\red_mid,      // Channel 0
@@ -228,8 +343,7 @@ ClipLaunchpadMini : ClipGridController {
 			\green,        // Channel 3
 			\red_high,     // Channel 4
 			\red_low,      // Channel 5
-			\amber_high,   // Channel 6
-			\yellow        // Channel 7
+			\amber_high    // Channel 6
 		];
 	}
 
