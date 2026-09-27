@@ -187,16 +187,9 @@ ClipLaunchpadMini : ClipGridController {
 	// Override parent's handleShortPress to use configurable clip length
 	handleShortPress { |row, col|
 		var slot = grid.getSlot(col, row);  // col=channel, row=slot index
-		var slotKey = (col * 100) + row;
 
 		if (slot.isNil, {
 			"ClipGridController: Invalid slot [%,%]".format(col, row).warn;
-			^this;
-		});
-
-		// Check if slot is in delete lockout period
-		if (this.isSlotLockedOut(slotKey), {
-			// Ignore press during lockout period
 			^this;
 		});
 
@@ -230,7 +223,6 @@ ClipLaunchpadMini : ClipGridController {
 	// Override parent's handleLongPress to use configurable clip length
 	handleLongPress { |row, col|
 		var slot = grid.getSlot(col, row);
-		var slotKey = (col * 100) + row;
 
 		if (slot.isNil, {
 			"ClipGridController: Invalid slot [%,%]".format(col, row).warn;
@@ -238,12 +230,14 @@ ClipLaunchpadMini : ClipGridController {
 		});
 
 		if (slot.hasAudio, {
-			// Has audio: clear the slot
+			// Has audio: clear, then arm and launch with current clip length
 			grid.clearSlot(col, row);
 
-			// Set lockout period: prevent arming for deleteBufferTime seconds
-			// This prevents immediately starting recording when button is released
-			this.setSlotLockout(slotKey, deleteBufferTime);
+			// Schedule re-arm after short delay to let clear complete
+			transport.scheduleAfterBeats(0.1, {
+				grid.armSlot(col, row, this.getLoopLengthBeats);
+				grid.launchSlot(col, row);
+			});
 		}, {
 			// Empty: just arm (don't launch) with current clip length
 			grid.armSlot(col, row, this.getLoopLengthBeats);
