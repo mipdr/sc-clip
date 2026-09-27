@@ -142,7 +142,7 @@ if (~midiOut.notNil, {
  *   - 4x8 grid for triggering clips
  *   - Visual feedback via LED colors
  *   - Short press: arm/launch/stop clips
- *   - Long press: clear and re-arm clips
+ *   - Long press: delete clip
  */
 
 (

@@ -17,7 +17,7 @@
  *   - Short press on empty slot: Arm and start recording (8 beats)
  *   - Short press on playing slot: Stop
  *   - Short press on stopped slot: Resume playback
- *   - Long press (>1 second): Delete clip and restart recording
+ *   - Long press (>1 second): Delete clip (press again to record a new one)
  *
  * LED Feedback:
  *   - Off: Empty slot
@@ -87,7 +87,7 @@ Basic Workflow:
 4. Recording automatically stops, and the clip starts looping
 5. Press the same button to stop the clip
 6. Press again to restart playback
-7. Hold the button for >0.5 beats to delete and re-record
+7. Hold the button for >1 second to delete the clip, then press again to re-record
 
 Tips:
 - Each column (0-7) is a separate channel with its own color
@@ -203,8 +203,9 @@ Tips:
 // Change long press threshold (in seconds)
 ~controller.longPressThreshold = 1.5;  // Require a 1.5 s hold for long press
 
-// Change loop length (hard-coded to 8 beats by default)
-~controller.loopLengthBeats = 16;  // Use 16-beat loops
+// Loop length for new clips is chosen with the column 7 selector pads
+// (1, 2, 4, 8, 16, 32, 64 bars); check the current one with:
+~controller.loopLengthBeats;
 
 // ===================================
 // 9. Troubleshooting
