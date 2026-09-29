@@ -12,9 +12,11 @@ SCClip {
 	var <grid;
 	var <numChannels;
 	var <numSlots;
-	var <inputMapping;  // Array: channel index -> hardware input index
+	var <inputMapping;  // Array: channel index -> hardware input index (deprecated, use channelConfig)
+	var <channelConfig;  // Array of channel configs: (type: \audio or \midi, ...)
+	var <midiOut;  // MIDIOut instance for MIDI channels
 
-	*new { |numChannels = 4, numSlots = 8, server, inputMapping|
+	*new { |numChannels = 4, numSlots = 8, server, inputMapping, channelConfig, midiOut|
 		^super.newCopyArgs(
 			server ? Server.default,  // server
 			nil,                      // transport
@@ -22,7 +24,9 @@ SCClip {
 			nil,                      // grid
 			numChannels,              // numChannels
 			numSlots,                 // numSlots
-			inputMapping              // inputMapping (nil = default 1:1)
+			inputMapping,             // inputMapping (nil = default 1:1, deprecated)
+			channelConfig,            // channelConfig (nil = all audio channels)
+			midiOut                   // midiOut (required if any MIDI channels)
 		);
 	}
 
@@ -88,7 +92,9 @@ SCClip {
 			transport: transport,
 			masterBus: masterBus,
 			server: server,
-			inputMapping: inputMapping
+			inputMapping: inputMapping,
+			channelConfig: channelConfig,
+			midiOut: midiOut
 		);
 
 		"SCClip: Initialized (% channels × % slots)".format(numChannels, numSlots).postln;
@@ -136,6 +142,25 @@ SCClip {
 
 	overdubSlot { |channelIndex, slotIndex|
 		grid.overdubSlot(channelIndex, slotIndex);
+	}
+
+	// Write MIDI clip from notation string (for MIDI channels only)
+	writeMidiClip { |channelIndex, slotIndex, notationString, padding = false|
+		var channel = grid.getChannel(channelIndex);
+
+		if (channel.isNil, {
+			"SCClip: Invalid channel index %".format(channelIndex).error;
+			^this;
+		});
+
+		// Check if this is a MIDI channel
+		if (channel.isKindOf(ClipMIDIChannel).not, {
+			"SCClip: Channel % is not a MIDI channel (cannot write MIDI clip)".format(channelIndex).error;
+			^this;
+		});
+
+		// Load MIDI clip from notation
+		^channel.loadMIDIClip(slotIndex, notationString, padding);
 	}
 
 	stopChannel { |channelIndex|
@@ -269,10 +294,12 @@ SCClip {
 	// Post-fader level meters for every channel plus the master (what goes
 	// to the hardware). Caller owns the result and should .free it.
 	createLevelMeter {
+		// MIDI channels have no audio to meter
+		var audioChannels = grid.channels.select { |channel| channel.mixerChannel.notNil };
 		^ClipLevelMeter(
 			server,
-			grid.channels.collect { |channel| "Ch %".format(channel.channelIndex + 1) } ++ ["Master"],
-			grid.channels.collect(_.mixerChannel) ++ [masterBus.mixerChannel]
+			audioChannels.collect { |channel| "Ch %".format(channel.channelIndex + 1) } ++ ["Master"],
+			audioChannels.collect(_.mixerChannel) ++ [masterBus.mixerChannel]
 		);
 	}
 
@@ -437,30 +464,40 @@ SCClip {
 		// Grid configuration
 		data[\grid] = Dictionary[
 			\numChannels -> numChannels,
-			\numSlots -> numSlots
+			\numSlots -> numSlots,
+			\channelConfig -> grid.channelConfig
 		];
 
 		// Channel and slot data
 		data[\channels] = grid.channels.collect { |channel, chanIdx|
-			Dictionary[
-				\level -> channel.mixerChannel.level,
-				\pan -> channel.mixerChannel.pan,
-				\isMuted -> channel.mixerChannel.muted,
-				\isSoloed -> channel.isSoloed,
-				\slots -> channel.slots.collect { |slot, slotIdx|
-					if (slot.hasAudio, {
-						Dictionary[
-							\hasAudio -> true,
-							\loopLengthBeats -> slot.loopLengthBeats,
-							\loopLengthSamples -> slot.loopLengthSamples,
-							\state -> slot.state,
-							\audioFile -> "channel_%_slot_%.wav".format(chanIdx, slotIdx)
-						]
-					}, {
-						Dictionary[\hasAudio -> false]
-					})
-				}
-			]
+			if (channel.isKindOf(ClipMIDIChannel), {
+				Dictionary[
+					\type -> \midi,
+					\isMuted -> channel.isMuted,
+					\isSoloed -> channel.isSoloed,
+					\slots -> channel.slots.collect(_.asSessionData)
+				]
+			}, {
+				Dictionary[
+					\level -> channel.mixerChannel.level,
+					\pan -> channel.mixerChannel.pan,
+					\isMuted -> channel.mixerChannel.muted,
+					\isSoloed -> channel.isSoloed,
+					\slots -> channel.slots.collect { |slot, slotIdx|
+						if (slot.hasAudio, {
+							Dictionary[
+								\hasAudio -> true,
+								\loopLengthBeats -> slot.loopLengthBeats,
+								\loopLengthSamples -> slot.loopLengthSamples,
+								\state -> slot.state,
+								\audioFile -> "channel_%_slot_%.wav".format(chanIdx, slotIdx)
+							]
+						}, {
+							Dictionary[\hasAudio -> false]
+						})
+					}
+				]
+			});
 		};
 
 		^data;
@@ -521,7 +558,7 @@ SCClip {
 
 	// Load session from disk. options: server options to boot with (same as
 	// boot's), if the server isn't running yet.
-	*load { |path, server, action, options|
+	*load { |path, server, action, options, channelConfig, midiOut|
 		var sessionDir = PathName(path);
 		var metadataPath = sessionDir.fullPath +/+ "session.scd";
 		var sessionData;
@@ -544,10 +581,17 @@ SCClip {
 		});
 
 		// Create new SCClip instance with saved grid dimensions
+		// Sessions remember their channel layout; an explicit one overrides it
+		// (and sets the channel count, so e.g. a 4-channel session can be
+		// loaded into a 4 audio + 2 MIDI rig -- only saved channels are restored)
+		channelConfig = channelConfig ? sessionData[\grid][\channelConfig];
+
 		scclip = SCClip.new(
-			numChannels: sessionData[\grid][\numChannels],
+			numChannels: channelConfig !? (_.size) ? sessionData[\grid][\numChannels],
 			numSlots: sessionData[\grid][\numSlots],
-			server: server
+			server: server,
+			channelConfig: channelConfig,
+			midiOut: midiOut
 		);
 
 		// Boot and initialize with saved settings
@@ -635,8 +679,18 @@ SCClip {
 		channelsData.do { |channelData, chanIdx|
 			var channel = grid.getChannel(chanIdx);
 
-			channel.setLevel(channelData[\level].ampdb);
-			channel.setPan(channelData[\pan]);
+			if (channelData[\type] == \midi, {
+				if (channel.isKindOf(ClipMIDIChannel), {
+					channelData[\slots].do { |slotData, slotIdx|
+						channel.getSlot(slotIdx).restoreSessionData(slotData);
+					};
+				}, {
+					"SCClip: Channel % was a MIDI channel when saved -- its clips are skipped".format(chanIdx).warn;
+				});
+			}, {
+				channel.setLevel(channelData[\level].ampdb);
+				channel.setPan(channelData[\pan]);
+			});
 
 			if (channelData[\isMuted], { channel.mute });
 			if (channelData[\isSoloed], { soloedChanIdx = chanIdx });
