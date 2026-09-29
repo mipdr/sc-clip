@@ -48,7 +48,7 @@ ClipMIDINotationParser {
 		var currentTime = 0;
 
 		tokens.do { |token|
-			var noteEvents;
+			var noteEvents, duration;
 
 			if (token.size > 0, {
 				// Parse token (may be single note or chord)
@@ -59,7 +59,7 @@ ClipMIDINotationParser {
 					noteEvents.do { |ev| events.add(ev) };
 
 					// Advance time by duration of this token
-					var duration = this.parseDuration(token);
+					duration = this.parseDuration(token);
 					currentTime = currentTime + duration;
 				});
 			});

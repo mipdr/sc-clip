@@ -224,7 +224,7 @@ ClipMIDISlot {
 		playRoutine = Routine({
 			var midiOut = channel.midiOut;
 			var midiOutChannel = channel.midiOutChannel;
-			var loopBeat, eventIndex;
+			var loopBeat, eventIndex, event, waitBeats, remainingBeats;
 
 			loop {
 				loopBeat = 0;
@@ -232,8 +232,8 @@ ClipMIDISlot {
 
 				// Play all events in this loop iteration
 				while { eventIndex < midiEvents.size } {
-					var event = midiEvents[eventIndex];
-					var waitBeats = event.time - loopBeat;
+					event = midiEvents[eventIndex];
+					waitBeats = event.time - loopBeat;
 
 					// Wait until event time
 					if (waitBeats > 0, { waitBeats.wait });
@@ -250,7 +250,7 @@ ClipMIDISlot {
 				};
 
 				// Wait for remaining loop time
-				var remainingBeats = loopLengthBeats - loopBeat;
+				remainingBeats = loopLengthBeats - loopBeat;
 				if (remainingBeats > 0, { remainingBeats.wait });
 			};
 		});
