@@ -546,7 +546,7 @@ SCClip {
 
 	// Load session from disk. options: server options to boot with (same as
 	// boot's), if the server isn't running yet.
-	*load { |path, server, action, options|
+	*load { |path, server, action, options, channelConfig, midiOut|
 		var sessionDir = PathName(path);
 		var metadataPath = sessionDir.fullPath +/+ "session.scd";
 		var sessionData;
@@ -572,7 +572,9 @@ SCClip {
 		scclip = SCClip.new(
 			numChannels: sessionData[\grid][\numChannels],
 			numSlots: sessionData[\grid][\numSlots],
-			server: server
+			server: server,
+			channelConfig: channelConfig,
+			midiOut: midiOut
 		);
 
 		// Boot and initialize with saved settings
