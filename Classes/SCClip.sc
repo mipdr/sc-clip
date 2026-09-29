@@ -160,7 +160,7 @@ SCClip {
 		});
 
 		// Load MIDI clip from notation
-		channel.loadMIDIClip(slotIndex, notationString, padding);
+		^channel.loadMIDIClip(slotIndex, notationString, padding);
 	}
 
 	stopChannel { |channelIndex|
@@ -294,10 +294,12 @@ SCClip {
 	// Post-fader level meters for every channel plus the master (what goes
 	// to the hardware). Caller owns the result and should .free it.
 	createLevelMeter {
+		// MIDI channels have no audio to meter
+		var audioChannels = grid.channels.select { |channel| channel.mixerChannel.notNil };
 		^ClipLevelMeter(
 			server,
-			grid.channels.collect { |channel| "Ch %".format(channel.channelIndex + 1) } ++ ["Master"],
-			grid.channels.collect(_.mixerChannel) ++ [masterBus.mixerChannel]
+			audioChannels.collect { |channel| "Ch %".format(channel.channelIndex + 1) } ++ ["Master"],
+			audioChannels.collect(_.mixerChannel) ++ [masterBus.mixerChannel]
 		);
 	}
 
@@ -462,30 +464,40 @@ SCClip {
 		// Grid configuration
 		data[\grid] = Dictionary[
 			\numChannels -> numChannels,
-			\numSlots -> numSlots
+			\numSlots -> numSlots,
+			\channelConfig -> grid.channelConfig
 		];
 
 		// Channel and slot data
 		data[\channels] = grid.channels.collect { |channel, chanIdx|
-			Dictionary[
-				\level -> channel.mixerChannel.level,
-				\pan -> channel.mixerChannel.pan,
-				\isMuted -> channel.mixerChannel.muted,
-				\isSoloed -> channel.isSoloed,
-				\slots -> channel.slots.collect { |slot, slotIdx|
-					if (slot.hasAudio, {
-						Dictionary[
-							\hasAudio -> true,
-							\loopLengthBeats -> slot.loopLengthBeats,
-							\loopLengthSamples -> slot.loopLengthSamples,
-							\state -> slot.state,
-							\audioFile -> "channel_%_slot_%.wav".format(chanIdx, slotIdx)
-						]
-					}, {
-						Dictionary[\hasAudio -> false]
-					})
-				}
-			]
+			if (channel.isKindOf(ClipMIDIChannel), {
+				Dictionary[
+					\type -> \midi,
+					\isMuted -> channel.isMuted,
+					\isSoloed -> channel.isSoloed,
+					\slots -> channel.slots.collect(_.asSessionData)
+				]
+			}, {
+				Dictionary[
+					\level -> channel.mixerChannel.level,
+					\pan -> channel.mixerChannel.pan,
+					\isMuted -> channel.mixerChannel.muted,
+					\isSoloed -> channel.isSoloed,
+					\slots -> channel.slots.collect { |slot, slotIdx|
+						if (slot.hasAudio, {
+							Dictionary[
+								\hasAudio -> true,
+								\loopLengthBeats -> slot.loopLengthBeats,
+								\loopLengthSamples -> slot.loopLengthSamples,
+								\state -> slot.state,
+								\audioFile -> "channel_%_slot_%.wav".format(chanIdx, slotIdx)
+							]
+						}, {
+							Dictionary[\hasAudio -> false]
+						})
+					}
+				]
+			});
 		};
 
 		^data;
@@ -569,8 +581,13 @@ SCClip {
 		});
 
 		// Create new SCClip instance with saved grid dimensions
+		// Sessions remember their channel layout; an explicit one overrides it
+		// (and sets the channel count, so e.g. a 4-channel session can be
+		// loaded into a 4 audio + 2 MIDI rig -- only saved channels are restored)
+		channelConfig = channelConfig ? sessionData[\grid][\channelConfig];
+
 		scclip = SCClip.new(
-			numChannels: sessionData[\grid][\numChannels],
+			numChannels: channelConfig !? (_.size) ? sessionData[\grid][\numChannels],
 			numSlots: sessionData[\grid][\numSlots],
 			server: server,
 			channelConfig: channelConfig,
@@ -662,8 +679,18 @@ SCClip {
 		channelsData.do { |channelData, chanIdx|
 			var channel = grid.getChannel(chanIdx);
 
-			channel.setLevel(channelData[\level].ampdb);
-			channel.setPan(channelData[\pan]);
+			if (channelData[\type] == \midi, {
+				if (channel.isKindOf(ClipMIDIChannel), {
+					channelData[\slots].do { |slotData, slotIdx|
+						channel.getSlot(slotIdx).restoreSessionData(slotData);
+					};
+				}, {
+					"SCClip: Channel % was a MIDI channel when saved -- its clips are skipped".format(chanIdx).warn;
+				});
+			}, {
+				channel.setLevel(channelData[\level].ampdb);
+				channel.setPan(channelData[\pan]);
+			});
 
 			if (channelData[\isMuted], { channel.mute });
 			if (channelData[\isSoloed], { soloedChanIdx = chanIdx });

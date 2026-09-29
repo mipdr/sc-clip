@@ -3,22 +3,27 @@
  *
  * Manages one MIDI channel with multiple clip slots.
  * Handles MIDI input (for recording) and MIDI output (for playback).
+ *
+ * Mirrors the parts of ClipChannel's interface that ClipGrid, controllers
+ * and session saving call on every channel: mute/solo work (muting suppresses
+ * note-ons), level/pan/effects/overdub are audio-only and just warn.
  */
 
 ClipMIDIChannel {
 	var <channelIndex;
 	var <numSlots;
 	var <slots;  // Array of ClipMIDISlot instances
-	var <midiInChannel;  // MIDI input channel number (for recording)
+	var <midiInChannel;  // MIDI input channel number (for recording), nil = any
 	var <midiOutChannel;  // MIDI output channel number (for playback)
 	var <midiOut;  // MIDIOut instance
 	var <transport;  // ClipTransport reference
 	var <server;
 	var <>slotStateAction;  // Optional callback { |slotIndex, newState| }
-	var <noteOnFunc;  // MIDIFunc for note on (managed by slot during recording)
-	var <noteOffFunc;  // MIDIFunc for note off (managed by slot during recording)
+	var <midiInSrcID;  // MIDIEndPoint uid to record from, nil = any source
+	var <isMuted = false;
+	var <isSoloed = false;  // Tracked here; cross-channel silencing is done by ClipGrid:soloChannel
 
-	*new { |channelIndex, numSlots = 8, transport, server, midiInChannel = 0, midiOutChannel = 0, midiOut|
+	*new { |channelIndex, numSlots = 8, transport, server, midiInChannel = 0, midiOutChannel = 0, midiOut, midiInSrcID|
 		^super.newCopyArgs(
 			channelIndex,             // channelIndex
 			numSlots,                 // numSlots
@@ -29,19 +34,17 @@ ClipMIDIChannel {
 			transport,                // transport
 			server ? Server.default,  // server
 			nil,                      // slotStateAction
-			nil,                      // noteOnFunc
-			nil                       // noteOffFunc
+			midiInSrcID               // midiInSrcID
 		).init;
 	}
 
 	init {
-		// Create clip slots
 		slots = Array.fill(numSlots, { |i|
 			ClipMIDISlot.new(this, i);
 		});
 
-		"ClipMIDIChannel[%]: Initialized with % slots (MIDI in: %, out: %)"
-			.format(channelIndex, numSlots, midiInChannel, midiOutChannel)
+		"ClipMIDIChannel[%]: Initialized with % slots (MIDI in: % from %, out: %)"
+			.format(channelIndex, numSlots, midiInChannel ? "any", midiInSrcID ? "any source", midiOutChannel)
 			.postln;
 	}
 
@@ -69,15 +72,13 @@ ClipMIDIChannel {
 		if (slot.notNil, {
 			case
 			{ slot.isArmed } {
-				var nextBeat = transport.nextLaunchQuant;
-				slot.record(nextBeat);
+				slot.record(transport.nextLaunchQuant);
 			}
 			{ slot.isStopped } {
-				var nextBeat = transport.nextLaunchQuant;
-				slot.play(nextBeat);
+				slot.play(transport.nextLaunchQuant);
 			}
 			{ slot.isEmpty } {
-				"ClipMIDIChannel[%]: Slot % is empty - arm it first".format(channelIndex, slotIndex).warn;
+				"ClipMIDIChannel[%]: Slot % is empty - write a clip or arm it first".format(channelIndex, slotIndex).warn;
 			}
 			{
 				"ClipMIDIChannel[%]: Slot % already active (%)".format(channelIndex, slotIndex, slot.state).warn;
@@ -91,8 +92,7 @@ ClipMIDIChannel {
 		if (slot.notNil, {
 			case
 			{ slot.isPlaying } {
-				var nextBeat = transport.nextQuant;
-				slot.stop(nextBeat);
+				slot.stop(transport.nextQuant);
 			}
 			{ slot.isQueuedToPlay } {
 				slot.cancelPlay;
@@ -106,10 +106,7 @@ ClipMIDIChannel {
 	// Stop all playing slots in this channel
 	stopAll {
 		slots.do { |slot|
-			if (slot.isPlaying, {
-				var nextBeat = transport.nextQuant;
-				slot.stop(nextBeat);
-			});
+			if (slot.isPlaying, { slot.stop(transport.nextQuant) });
 			if (slot.isQueuedToPlay, { slot.cancelPlay });
 		};
 	}
@@ -126,14 +123,52 @@ ClipMIDIChannel {
 	loadMIDIClip { |slotIndex, notationString, padding = false|
 		var slot = this.getSlot(slotIndex);
 		if (slot.notNil, {
-			slot.loadFromNotation(notationString, padding);
+			^slot.loadFromNotation(notationString, padding);
 		});
+		^false;
+	}
+
+	overdubSlot { |slotIndex|
+		"ClipMIDIChannel[%]: MIDI clips don't support overdubbing".format(channelIndex).warn;
 	}
 
 	// Callback when a slot changes state (for LED updates, etc.)
 	slotStateChanged { |slotIndex, newState|
 		slotStateAction.value(slotIndex, newState);
 	}
+
+	// Mixer-style controls
+
+	mute {
+		isMuted = true;
+		slots.do(_.releaseNotes);
+	}
+
+	unMute {
+		isMuted = false;
+	}
+
+	solo {
+		isSoloed = true;
+	}
+
+	unSolo {
+		isSoloed = false;
+	}
+
+	setLevel { |db|
+		"ClipMIDIChannel[%]: Level is audio-only (set it on the receiving instrument)".format(channelIndex).warn;
+	}
+
+	setPan { |position|
+		"ClipMIDIChannel[%]: Pan is audio-only (set it on the receiving instrument)".format(channelIndex).warn;
+	}
+
+	addEffect { |synthDef, args, slot = 0|
+		"ClipMIDIChannel[%]: Effects are audio-only".format(channelIndex).warn;
+	}
+
+	mixerChannel { ^nil }
 
 	// Query methods
 
@@ -153,8 +188,6 @@ ClipMIDIChannel {
 
 	free {
 		slots.do(_.free);
-		if (noteOnFunc.notNil, { noteOnFunc.free });
-		if (noteOffFunc.notNil, { noteOffFunc.free });
 	}
 
 }

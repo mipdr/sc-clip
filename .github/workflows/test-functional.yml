@@ -151,6 +151,14 @@ jobs:
             exit $TEST_EXIT
           fi
 
+      - name: Run MIDI clip tests
+        run: |
+          export QT_QPA_PLATFORM=offscreen
+          echo "\"$(pwd)/Tests/test_midi_clips.scd\".load;" | timeout 60 sclang
+          TEST_EXIT=$?
+          if [ $TEST_EXIT -eq 124 ]; then echo "ERROR: MIDI tests TIMED OUT"; exit 1; fi
+          exit $TEST_EXIT
+
       - name: Cleanup
         if: always()
         run: |

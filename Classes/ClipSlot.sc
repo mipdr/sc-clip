@@ -489,6 +489,7 @@ ClipSlot {
 	isStopped { ^state == \stopped }
 	isQueuedToPlay { ^state == \queuedToPlay }
 	hasAudio { ^buffer.notNil }
+	hasContent { ^this.hasAudio }  // Also on ClipMIDISlot, for code handling both slot types
 
 	// Cleanup
 	free {

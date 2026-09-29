@@ -6,11 +6,14 @@
  *
  * States: \empty, \armed, \recording, \playing, \stopped, \queuedToPlay, \queuedToStop
  * Note: MIDI clips don't support overdubbing (no \overdubbing state)
+ *
+ * Events are Events of (time: beats from loop start, type: \noteOn/\noteOff,
+ * note: 0-127, vel: 0-127), kept sorted by time.
  */
 
 ClipMIDISlot {
 	var <state;
-	var <midiEvents;  // Array of (time: beats, type: \noteOn/\noteOff, note: midi#, vel: 0-127)
+	var <midiEvents;  // List of events, sorted by time
 	var <loopLengthBeats;
 	var <loopStartBeat;  // Beat the loop's current run started at (its phase), nil when not running
 	var <channel;  // Parent ClipMIDIChannel
@@ -18,7 +21,9 @@ ClipMIDISlot {
 	var <server;
 	var <playRoutine;  // Routine for MIDI playback
 	var <recordStartBeat;  // Absolute beat when recording started
-	var <activeNotes;  // IdentityDictionary: note# -> press time (for note-off during recording)
+	var <activeNotes;  // IdentitySet of notes held down during recording
+	var <soundingNotes;  // IdentitySet of notes this slot has sent a note-on for (and no note-off yet)
+	var noteOnFunc, noteOffFunc;  // Recording responders, only alive while \recording
 
 	*new { |channel, slotIndex|
 		^super.newCopyArgs(
@@ -28,16 +33,14 @@ ClipMIDISlot {
 			nil,         // loopStartBeat
 			channel,     // channel
 			slotIndex,   // slotIndex
-			channel.server, // server
-			nil,         // playRoutine
-			nil,         // recordStartBeat
-			nil          // activeNotes
+			channel.server // server
 		).init;
 	}
 
 	init {
 		midiEvents = List.new;
-		activeNotes = IdentityDictionary.new;
+		activeNotes = IdentitySet.new;
+		soundingNotes = IdentitySet.new;
 	}
 
 	// Arm slot for recording with specified loop length in beats
@@ -49,15 +52,10 @@ ClipMIDISlot {
 
 		// Re-arming a slot that already has MIDI events: keep the existing
 		// loopLengthBeats (same as audio clips - loop length is fixed at first arm)
-		if (midiEvents.size > 0, {
-			this.setState(\armed);
-			^this;
-		});
+		if (midiEvents.size == 0, { loopLengthBeats = lengthBeats });
 
-		loopLengthBeats = lengthBeats;
-
-		"ClipMIDISlot[%,%]: Armed for % beats"
-			.format(channel.channelIndex, slotIndex, lengthBeats)
+		"ClipMIDISlot[%,%]: Armed for % beats (recording replaces any existing events)"
+			.format(channel.channelIndex, slotIndex, loopLengthBeats)
 			.postln;
 
 		this.setState(\armed);
@@ -73,106 +71,86 @@ ClipMIDISlot {
 		loopStartBeat = atBeat;
 		recordStartBeat = atBeat;
 
-		// Clear old events if re-recording
-		midiEvents.clear;
-		activeNotes.clear;
-
-		// Schedule recording to start at the specified beat
 		channel.transport.scheduleAtBeat(atBeat, {
-			this.startRecording;
+			// Skip if the slot was cleared (or recording already started
+			// from a double launch) while queued
+			if (state == \armed, { this.startRecording });
 		});
 	}
 
 	// Internal: actually start recording
 	startRecording {
-		"ClipMIDISlot[%,%]: Starting MIDI recording..."
-			.format(channel.channelIndex, slotIndex)
+		"ClipMIDISlot[%,%]: Starting MIDI recording (% beats)..."
+			.format(channel.channelIndex, slotIndex, loopLengthBeats)
 			.postln;
 
+		midiEvents = List.new;
+		activeNotes.clear;
 		this.setState(\recording);
-
-		// Setup MIDI input responder
 		this.setupMIDIRecording;
 
-		// Schedule transition to playing after loop completes
 		channel.transport.scheduleAfterBeats(loopLengthBeats, {
-			this.finishRecording;
+			if (state == \recording, { this.finishRecording });
 		});
 	}
 
-	// Setup MIDI recording responder
+	// Setup MIDI recording responders, filtered by the channel's MIDI input
+	// channel and (if set) source device, so e.g. Launchpad button presses
+	// aren't recorded as notes
 	setupMIDIRecording {
-		var midiInChannel = channel.midiInChannel;
-		var transport = channel.transport;
+		this.freeRecordFuncs;
 
-		// Note On
-		channel.noteOnFunc = MIDIFunc.noteOn({ |vel, note, chan, src|
-			var currentBeat = transport.beat;
-			var relativeTime = currentBeat - recordStartBeat;
+		noteOnFunc = MIDIFunc.noteOn({ |vel, note|
+			// Running-status note-on with velocity 0 is a note-off
+			this.recordEvent(if (vel > 0, \noteOn, \noteOff), note, vel);
+		}, chan: channel.midiInChannel, srcID: channel.midiInSrcID);
 
-			// Only record if within loop bounds
-			if (relativeTime >= 0 and: { relativeTime < loopLengthBeats }, {
-				midiEvents.add((
-					time: relativeTime,
-					type: \noteOn,
-					note: note,
-					vel: vel
-				));
-				activeNotes[note] = relativeTime;
+		noteOffFunc = MIDIFunc.noteOff({ |vel, note|
+			this.recordEvent(\noteOff, note, 0);
+		}, chan: channel.midiInChannel, srcID: channel.midiInSrcID);
+	}
 
-				"ClipMIDISlot: Recorded noteOn - note:% vel:% @ beat:%"
-					.format(note, vel, relativeTime.round(0.001))
-					.postln;
-			});
-		}, chan: midiInChannel);
+	recordEvent { |type, note, vel|
+		var relativeTime = channel.transport.beat - recordStartBeat;
 
-		// Note Off
-		channel.noteOffFunc = MIDIFunc.noteOff({ |vel, note, chan, src|
-			var currentBeat = transport.beat;
-			var relativeTime = currentBeat - recordStartBeat;
+		if (state != \recording or: { relativeTime < 0 } or: { relativeTime >= loopLengthBeats }, { ^this });
 
-			// Only record if within loop bounds
-			if (relativeTime >= 0 and: { relativeTime < loopLengthBeats }, {
-				midiEvents.add((
-					time: relativeTime,
-					type: \noteOff,
-					note: note,
-					vel: 0
-				));
-				activeNotes.removeAt(note);
+		// A note-off for a note pressed before recording started has no
+		// matching note-on in the clip -- drop it
+		if (type == \noteOff and: { activeNotes.includes(note).not }, { ^this });
 
-				"ClipMIDISlot: Recorded noteOff - note:% @ beat:%"
-					.format(note, relativeTime.round(0.001))
-					.postln;
-			});
-		}, chan: midiInChannel);
+		midiEvents.add((time: relativeTime, type: type, note: note, vel: if (type == \noteOn, vel, 0)));
+		if (type == \noteOn, { activeNotes.add(note) }, { activeNotes.remove(note) });
+
+		"ClipMIDISlot[%,%]: Recorded % note:% vel:% @ beat:%"
+			.format(channel.channelIndex, slotIndex, type, note, vel, relativeTime.round(0.001))
+			.postln;
+	}
+
+	freeRecordFuncs {
+		noteOnFunc !? { noteOnFunc.free; noteOnFunc = nil };
+		noteOffFunc !? { noteOffFunc.free; noteOffFunc = nil };
 	}
 
 	// Internal: finish recording and start playback
 	finishRecording {
-		// Clean up MIDI responders
-		if (channel.noteOnFunc.notNil, {
-			channel.noteOnFunc.free;
-			channel.noteOnFunc = nil;
-		});
-		if (channel.noteOffFunc.notNil, {
-			channel.noteOffFunc.free;
-			channel.noteOffFunc = nil;
-		});
+		this.freeRecordFuncs;
 
-		// Send note-off for any still-active notes
-		activeNotes.keysDo { |note|
-			midiEvents.add((
-				time: loopLengthBeats,
-				type: \noteOff,
-				note: note,
-				vel: 0
-			));
+		// Close any notes still held at the loop end
+		activeNotes.do { |note|
+			midiEvents.add((time: loopLengthBeats, type: \noteOff, note: note, vel: 0));
 		};
 		activeNotes.clear;
 
-		// Sort events by time
-		midiEvents = midiEvents.sort({ |a, b| a.time < b.time });
+		if (midiEvents.isEmpty, {
+			"ClipMIDISlot[%,%]: Recording finished with no notes -- slot left empty"
+				.format(channel.channelIndex, slotIndex)
+				.warn;
+			this.clear;
+			^this;
+		});
+
+		midiEvents = ClipMIDISlot.sortEvents(midiEvents);
 
 		"ClipMIDISlot[%,%]: Recording finished (% events), starting playback"
 			.format(channel.channelIndex, slotIndex, midiEvents.size)
@@ -210,55 +188,59 @@ ClipMIDISlot {
 			^this;
 		});
 
-		// Never drop a reference to a running routine
-		if (playRoutine.notNil, {
-			playRoutine.stop;
-			playRoutine = nil;
-		});
+		this.stopRoutine;
+
+		// Send MIDI with the same latency audio clips get from their server
+		// bundles, so MIDI and audio clips launched together line up
+		channel.midiOut.latency = server.latency;
 
 		"ClipMIDISlot[%,%]: Starting MIDI playback (% events)"
 			.format(channel.channelIndex, slotIndex, midiEvents.size)
 			.postln;
 
-		// Create playback routine
 		playRoutine = Routine({
-			var midiOut = channel.midiOut;
-			var midiOutChannel = channel.midiOutChannel;
-			var loopBeat, eventIndex, event, waitBeats, remainingBeats;
+			var events, length, loopBeat;
 
 			loop {
+				// Snapshot per loop iteration, so a clip rewritten while
+				// playing (loadFromNotation) switches over at the loop boundary
+				events = midiEvents.copy;
+				length = loopLengthBeats;
 				loopBeat = 0;
-				eventIndex = 0;
+				loopStartBeat = channel.transport.beat;
 
-				// Play all events in this loop iteration
-				while { eventIndex < midiEvents.size } {
-					event = midiEvents[eventIndex];
-					waitBeats = event.time - loopBeat;
-
-					// Wait until event time
-					if (waitBeats > 0, { waitBeats.wait });
-
-					// Send MIDI event
-					if (event.type == \noteOn, {
-						midiOut.noteOn(midiOutChannel, event.note, event.vel);
-					}, {
-						midiOut.noteOff(midiOutChannel, event.note, event.vel);
+				events.do { |event|
+					if (event.time > loopBeat, {
+						(event.time - loopBeat).wait;
+						loopBeat = event.time;
 					});
-
-					loopBeat = event.time;
-					eventIndex = eventIndex + 1;
+					this.sendEvent(event);
 				};
 
-				// Wait for remaining loop time
-				remainingBeats = loopLengthBeats - loopBeat;
-				if (remainingBeats > 0, { remainingBeats.wait });
+				(length - loopBeat).max(0).wait;
 			};
 		});
 
-		// Play on transport clock
 		playRoutine.play(channel.transport.clock);
 
 		this.setState(\playing);
+	}
+
+	sendEvent { |event|
+		var midiOut = channel.midiOut;
+		var midiOutChannel = channel.midiOutChannel;
+
+		if (event.type == \noteOn, {
+			if (channel.isMuted.not, {
+				midiOut.noteOn(midiOutChannel, event.note, event.vel);
+				soundingNotes.add(event.note);
+			});
+		}, {
+			if (soundingNotes.includes(event.note), {
+				midiOut.noteOff(midiOutChannel, event.note, 0);
+				soundingNotes.remove(event.note);
+			});
+		});
 	}
 
 	// Stop playback (called by transport at quantized time)
@@ -271,19 +253,14 @@ ClipMIDISlot {
 		this.setState(\queuedToStop);
 
 		channel.transport.scheduleAtBeat(atBeat, {
-			this.stopPlayback;
+			if (state == \queuedToStop, { this.stopPlayback });
 		});
 	}
 
 	// Internal: actually stop the playback routine
 	stopPlayback {
-		if (playRoutine.notNil, {
-			playRoutine.stop;
-			playRoutine = nil;
-		});
-
-		// Send all-notes-off
-		this.allNotesOff;
+		this.stopRoutine;
+		loopStartBeat = nil;
 
 		"ClipMIDISlot[%,%]: Stopped"
 			.format(channel.channelIndex, slotIndex)
@@ -292,65 +269,79 @@ ClipMIDISlot {
 		this.setState(\stopped);
 	}
 
-	// Send MIDI all-notes-off
-	allNotesOff {
-		var midiOut = channel.midiOut;
-		var midiOutChannel = channel.midiOutChannel;
-
-		// Send note-off for MIDI notes 0-127
-		128.do { |note|
-			midiOut.noteOff(midiOutChannel, note, 0);
-		};
+	stopRoutine {
+		playRoutine !? { playRoutine.stop; playRoutine = nil };
+		this.releaseNotes;
 	}
 
-	// Load MIDI clip from notation string
+	// Note-off for every note this slot left sounding (on stop, mute, clear)
+	releaseNotes {
+		soundingNotes.do { |note|
+			channel.midiOut.noteOff(channel.midiOutChannel, note, 0);
+		};
+		soundingNotes.clear;
+	}
+
+	// Load MIDI clip from notation string. The loop length is the summed
+	// duration of every token (rests included), rounded up to the next of
+	// 1, 2, 4, ... 64 beats when padding is true. Writing into a playing slot
+	// swaps the clip at its next loop boundary. Returns true on success.
 	loadFromNotation { |notationString, padding = false|
 		var parser = ClipMIDINotationParser.new;
-		var events, maxTime, clipLength, clipLengthOptions;
+		var events, clipLength;
 
-		// Parse notation into MIDI events
+		if (state == \recording, {
+			"ClipMIDISlot[%,%]: Cannot load notation while recording".format(channel.channelIndex, slotIndex).warn;
+			^false;
+		});
+
 		events = parser.parse(notationString);
 
-		if (events.isNil or: { events.size == 0 }, {
-			"ClipMIDISlot: Failed to parse notation or empty clip".error;
-			^this;
+		if (events.isNil or: { events.isEmpty }, {
+			"ClipMIDISlot[%,%]: Failed to parse notation or clip has no notes: \"%\""
+				.format(channel.channelIndex, slotIndex, notationString).error;
+			^false;
 		});
 
-		// Calculate clip length from events
-		maxTime = events.collect(_.time).maxItem;
-		clipLength = maxTime;
-
-		// Apply padding if requested
+		clipLength = parser.totalBeats;
 		if (padding, {
-			clipLengthOptions = [1, 2, 4, 8, 16, 32, 64];
-			clipLength = clipLengthOptions.detect({ |len| len >= maxTime }) ? 64;
+			clipLength = [1, 2, 4, 8, 16, 32, 64].detect({ |len| len >= clipLength }) ? clipLength;
 		});
 
-		// Arm with calculated length
-		this.arm(clipLength);
-
-		// Set MIDI events
-		midiEvents = events;
-		loopLengthBeats = clipLength;
+		this.setEvents(events, clipLength);
 
 		"ClipMIDISlot[%,%]: Loaded % events (% beats%)"
-			.format(
-				channel.channelIndex,
-				slotIndex,
-				events.size,
-				clipLength,
-				if (padding, { ", padded" }, { "" })
-			)
+			.format(channel.channelIndex, slotIndex, events.size, clipLength, if (padding, ", padded", ""))
 			.postln;
 
-		this.setState(\stopped);
+		^true;
+	}
+
+	// Replace the clip's events and loop length. Note-offs past the loop end
+	// (legato > 1 on the last note) are pulled back to it.
+	setEvents { |events, lengthBeats|
+		midiEvents = ClipMIDISlot.sortEvents(events.collect({ |event|
+			event.copy.put(\time, event.time.min(lengthBeats))
+		}));
+		loopLengthBeats = lengthBeats;
+
+		// Empty/armed slots become launchable; running ones keep running and
+		// pick up the new events at the next loop boundary
+		if ([\empty, \armed].includes(state), { this.setState(\stopped) });
+	}
+
+	*sortEvents { |events|
+		^List.newFrom(events).sort({ |a, b|
+			(a.time < b.time) or: { a.time == b.time and: { a.type == \noteOff } }
+		});
 	}
 
 	// Clear slot (free events and routine)
 	clear {
-		this.stopPlayback;
+		this.freeRecordFuncs;
+		this.stopRoutine;
 
-		midiEvents.clear;
+		midiEvents = List.new;
 		activeNotes.clear;
 		loopLengthBeats = nil;
 		loopStartBeat = nil;
@@ -361,6 +352,25 @@ ClipMIDISlot {
 			.postln;
 
 		this.setState(\empty);
+	}
+
+	// Session saving: plain arrays so the data survives writeArchive
+	asSessionData {
+		^Dictionary[
+			\hasAudio -> false,
+			\hasMIDI -> this.hasMIDI,
+			\loopLengthBeats -> loopLengthBeats,
+			\midiEvents -> midiEvents.collect({ |ev| [ev.time, ev.type, ev.note, ev.vel] }).asArray
+		];
+	}
+
+	restoreSessionData { |data|
+		if (data[\hasMIDI] == true, {
+			this.setEvents(
+				data[\midiEvents].collect({ |ev| (time: ev[0], type: ev[1], note: ev[2], vel: ev[3]) }),
+				data[\loopLengthBeats]
+			);
+		});
 	}
 
 	// Set state and trigger callbacks
@@ -381,10 +391,12 @@ ClipMIDISlot {
 	isArmed { ^state == \armed }
 	isRecording { ^state == \recording }
 	isPlaying { ^state == \playing }
+	isOverdubbing { ^false }  // MIDI slots don't overdub
 	isStopped { ^state == \stopped }
 	isQueuedToPlay { ^state == \queuedToPlay }
 	hasAudio { ^false }  // MIDI slots don't have audio
 	hasMIDI { ^midiEvents.size > 0 }
+	hasContent { ^this.hasMIDI }
 
 	// Cleanup
 	free {

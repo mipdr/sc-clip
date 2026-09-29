@@ -87,7 +87,8 @@ ClipGrid {
 					server: server,
 					midiInChannel: midiInChan,
 					midiOutChannel: midiOutChan,
-					midiOut: midiOut
+					midiOut: midiOut,
+					midiInSrcID: this.resolveMIDISource(config[\midiInSrc], i)
 				);
 			});
 		});
@@ -113,6 +114,24 @@ ClipGrid {
 					.postln;
 			});
 		};
+	}
+
+	// MIDI channel config's \midiInSrc -> MIDIEndPoint uid (nil = record from
+	// any source). Accepts a uid, or a device name looked up in
+	// MIDIClient.sources (e.g. "UMC404HD 192k").
+	resolveMIDISource { |src, channelIndex|
+		var endPoint;
+
+		if (src.isNil or: { src.isNumber }, { ^src });
+
+		if (MIDIClient.initialized.not, { MIDIClient.init });
+		endPoint = MIDIClient.sources.detect({ |ep| ep.device == src });
+		if (endPoint.isNil, {
+			"ClipGrid: MIDI channel % input device '%' not found -- recording from any source"
+				.format(channelIndex, src).warn;
+			^nil;
+		});
+		^endPoint.uid;
 	}
 
 	// Get a specific slot

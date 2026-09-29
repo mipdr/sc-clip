@@ -170,8 +170,8 @@ ClipGridController {
 			^this;
 		});
 
-		if (slot.hasAudio, {
-			// Has audio: clear the slot
+		if (slot.hasContent, {
+			// Has audio/MIDI: clear the slot
 			grid.clearSlot(col, row);
 
 			// Don't re-arm: the long press fires on release, so re-arming here

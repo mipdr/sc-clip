@@ -186,6 +186,7 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for full details.
 See the `Examples/` directory:
 - `00_command_line_test.scd` — **Start here!** Complete command-line testing guide with metronome
 - `01_basic_setup.scd` — Comprehensive usage examples (recording, overdub, mixing, effects)
+- `05_midi_clips.scd` — **MIDI clips**: mixed audio/MIDI channels, writing clips from notation, recording from a keyboard
 - `debug_logging_example.scd` — **Debug logging** demonstration for troubleshooting
 - `02_launchpad_grid.scd` — Full Launchpad setup (coming in Phase 3)
 - `03_effects_chains.scd` — Per-channel FX demos (coming soon)
