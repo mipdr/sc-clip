@@ -306,7 +306,7 @@ ClipMIDISlot {
 	// Load MIDI clip from notation string
 	loadFromNotation { |notationString, padding = false|
 		var parser = ClipMIDINotationParser.new;
-		var events;
+		var events, maxTime, clipLength, clipLengthOptions;
 
 		// Parse notation into MIDI events
 		events = parser.parse(notationString);
@@ -317,12 +317,12 @@ ClipMIDISlot {
 		});
 
 		// Calculate clip length from events
-		var maxTime = events.collect(_.time).maxItem;
-		var clipLength = maxTime;
+		maxTime = events.collect(_.time).maxItem;
+		clipLength = maxTime;
 
 		// Apply padding if requested
 		if (padding, {
-			var clipLengthOptions = [1, 2, 4, 8, 16, 32, 64];
+			clipLengthOptions = [1, 2, 4, 8, 16, 32, 64];
 			clipLength = clipLengthOptions.detect({ |len| len >= maxTime }) ? 64;
 		});
 

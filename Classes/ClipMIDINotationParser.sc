@@ -146,7 +146,7 @@ ClipMIDINotationParser {
 	// Parse a single note: "c4" -> 60, "cs5" -> 73
 	parseNote { |noteString|
 		var noteName, octave, semitone, midiNote;
-		var match;
+		var match, digitIndex;
 
 		// Check for rest
 		if (noteString == "~", { ^nil });
@@ -155,7 +155,7 @@ ClipMIDINotationParser {
 		// Format: <notename><octave> e.g. "c4", "cs5", "df3"
 
 		// Find where the octave number starts (first digit)
-		var digitIndex = noteString.detectIndex({ |char| char.isDecDigit });
+		digitIndex = noteString.detectIndex({ |char| char.isDecDigit });
 
 		if (digitIndex.isNil, {
 			"ClipMIDINotationParser: Invalid note format (no octave): %".format(noteString).error;
