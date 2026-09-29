@@ -43,6 +43,12 @@
 "Testing meter classes...".postln;
 "  ClipLevelMeter -> %".format(ClipLevelMeter).postln;
 
+// Test MIDI classes
+"Testing MIDI classes...".postln;
+"  ClipMIDIChannel -> %".format(ClipMIDIChannel).postln;
+"  ClipMIDISlot -> %".format(ClipMIDISlot).postln;
+"  ClipMIDINotationParser -> %".format(ClipMIDINotationParser).postln;
+
 // Note: ClipMasteringGUI is skipped in headless mode as it requires a display
 
 "========================================".postln;

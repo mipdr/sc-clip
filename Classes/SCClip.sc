@@ -12,9 +12,11 @@ SCClip {
 	var <grid;
 	var <numChannels;
 	var <numSlots;
-	var <inputMapping;  // Array: channel index -> hardware input index
+	var <inputMapping;  // Array: channel index -> hardware input index (deprecated, use channelConfig)
+	var <channelConfig;  // Array of channel configs: (type: \audio or \midi, ...)
+	var <midiOut;  // MIDIOut instance for MIDI channels
 
-	*new { |numChannels = 4, numSlots = 8, server, inputMapping|
+	*new { |numChannels = 4, numSlots = 8, server, inputMapping, channelConfig, midiOut|
 		^super.newCopyArgs(
 			server ? Server.default,  // server
 			nil,                      // transport
@@ -22,7 +24,9 @@ SCClip {
 			nil,                      // grid
 			numChannels,              // numChannels
 			numSlots,                 // numSlots
-			inputMapping              // inputMapping (nil = default 1:1)
+			inputMapping,             // inputMapping (nil = default 1:1, deprecated)
+			channelConfig,            // channelConfig (nil = all audio channels)
+			midiOut                   // midiOut (required if any MIDI channels)
 		);
 	}
 
@@ -88,7 +92,9 @@ SCClip {
 			transport: transport,
 			masterBus: masterBus,
 			server: server,
-			inputMapping: inputMapping
+			inputMapping: inputMapping,
+			channelConfig: channelConfig,
+			midiOut: midiOut
 		);
 
 		"SCClip: Initialized (% channels × % slots)".format(numChannels, numSlots).postln;
@@ -136,6 +142,25 @@ SCClip {
 
 	overdubSlot { |channelIndex, slotIndex|
 		grid.overdubSlot(channelIndex, slotIndex);
+	}
+
+	// Write MIDI clip from notation string (for MIDI channels only)
+	writeMidiClip { |channelIndex, slotIndex, notationString, padding = false|
+		var channel = grid.getChannel(channelIndex);
+
+		if (channel.isNil, {
+			"SCClip: Invalid channel index %".format(channelIndex).error;
+			^this;
+		});
+
+		// Check if this is a MIDI channel
+		if (channel.isKindOf(ClipMIDIChannel).not, {
+			"SCClip: Channel % is not a MIDI channel (cannot write MIDI clip)".format(channelIndex).error;
+			^this;
+		});
+
+		// Load MIDI clip from notation
+		channel.loadMIDIClip(slotIndex, notationString, padding);
 	}
 
 	stopChannel { |channelIndex|
