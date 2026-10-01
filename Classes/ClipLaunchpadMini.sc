@@ -7,8 +7,10 @@
  * Grid Layout (XY mode):
  *   - 8x8 grid: Columns 0-6 = channels (7 channels), Column 7 = controls
  *   - Rows 0-3 = clip slots (for columns 0-6)
- *   - Column 7, Rows 0-6 = clip length selector (1, 2, 4, 8, 16, 32, 64 bars),
- *     selected length lit orange, others green
+ *   - Column 7, Rows 0-6 = binary clip length selector (1, 2, 4, 8, 16, 32, 64 bars)
+ *     Multiple buttons can be selected simultaneously to express any bar length (1-127).
+ *     Selected bits lit orange, unselected green.
+ *     Examples: [2] = 2 bars, [1,2,4] = 7 bars, [1,4,8,16] = 29 bars
  *   - Row 7, Col 7 = metronome on/off (lit amber when on)
  *   - MIDI note = (row * 16) + col
  *
@@ -22,8 +24,9 @@
  */
 
 ClipLaunchpadMini : ClipGridController {
-	var <clipLengthBars;      // Currently selected clip length in bars (1, 2, 4, 8, 16, 32, 64)
-	var <clipLengthOptions;   // Array of available clip lengths in bars
+	var <clipLengthBars;      // Currently selected clip length in bars (sum of binary selections)
+	var <clipLengthOptions;   // Array of binary place values (powers of 2)
+	var <clipLengthSelections; // Set of selected binary places (e.g., Set[1, 2] for 3 bars)
 
 	*new { |grid, transport, numRows = 4, numCols = 7|
 		// Note: numCols = 7 for clip channels, column 7 is used for controls
@@ -32,9 +35,10 @@ ClipLaunchpadMini : ClipGridController {
 
 	// Initialize clip length settings
 	initClipLength {
-		// Available clip lengths in bars: 1, 2, 4, 8, 16, 32, 64
+		// Binary place values: 1, 2, 4, 8, 16, 32, 64 (7 bits = 0-127 bars)
 		clipLengthOptions = [1, 2, 4, 8, 16, 32, 64];
-		// Default to 2 bars (index 1)
+		// Start with 2 bars selected (just the "2" bit)
+		clipLengthSelections = Set[2];
 		clipLengthBars = 2;
 	}
 
@@ -176,13 +180,35 @@ ClipLaunchpadMini : ClipGridController {
 		^super.handleButtonPress(row, col, velocity, isNoteOn);
 	}
 
-	// Select clip length based on row index in column 7
+	// Toggle clip length bit (binary selector)
 	selectClipLength { |row|
+		var bitValue;
+
 		if (row < clipLengthOptions.size, {
-			clipLengthBars = clipLengthOptions[row];
-			"ClipLaunchpadMini: Selected clip length: % bars (% beats)".format(
-				clipLengthBars, this.loopLengthBeats
+			bitValue = clipLengthOptions[row];
+
+			// Toggle the bit: add if not present, remove if present
+			if (clipLengthSelections.includes(bitValue), {
+				clipLengthSelections.remove(bitValue);
+			}, {
+				clipLengthSelections.add(bitValue);
+			});
+
+			// Calculate total bar length (sum of all selected bits)
+			clipLengthBars = clipLengthSelections.sum;
+
+			// Ensure at least 1 bar (if all bits cleared, select 1)
+			if (clipLengthBars == 0, {
+				clipLengthSelections.add(1);
+				clipLengthBars = 1;
+			});
+
+			"ClipLaunchpadMini: Binary selector % = % bars (% beats)".format(
+				clipLengthSelections.asArray.sort,
+				clipLengthBars,
+				this.loopLengthBeats
 			).postln;
+
 			this.updateClipLengthLEDs;
 		});
 	}
@@ -197,11 +223,12 @@ ClipLaunchpadMini : ClipGridController {
 	}
 
 	// Update clip length selector LEDs (column 7, rows 0-6)
+	// Shows binary selection: selected bits are orange, unselected are green
 	updateClipLengthLEDs {
-		clipLengthOptions.do { |bars, index|
-			// Selected length: orange; unselected: green
+		clipLengthOptions.do { |bitValue, index|
+			// Selected bit: orange; unselected: green
 			this.sendLEDMessage(index, 7,
-				if (bars == clipLengthBars, \orange, \green));
+				if (clipLengthSelections.includes(bitValue), \orange, \green));
 		};
 	}
 
