@@ -54,5 +54,10 @@
 "========================================".postln;
 "sc-clip: compilation test PASSED".postln;
 "========================================".postln;
-0.exit;
+
+// Explicitly quit the server before exiting sclang to avoid CI timeout
+// The -D flag boots the server, which can prevent sclang from exiting cleanly
+Server.killAll;
+// Small delay to allow server processes to terminate
+{ 0.exit }.defer(0.2);
 )
