@@ -19,6 +19,7 @@ ClipChannel {
 	var <isSoloed;  // ddwMixerChannel has no solo concept -- tracked here; actual
 	                // cross-channel silencing is done by ClipGrid:soloChannel/unSoloChannel
 	var <hardwareInputIndex;  // Which hardware input this channel reads from (nil = no input)
+	var <inputMonitorSynth;  // Reference to input monitor synth
 	var <>slotStateAction;  // Optional callback { |slotIndex, newState| } (e.g. grid controller LEDs)
 
 	*new { |channelIndex, numSlots = 8, transport, masterChannel, server, hardwareInputIndex|
@@ -34,7 +35,8 @@ ClipChannel {
 			server ? Server.default,  // server
 			nil,                      // effects
 			false,                    // isSoloed
-			hardwareInputIndex        // hardwareInputIndex (nil = defaults to channelIndex for backward compat)
+			hardwareInputIndex,       // hardwareInputIndex (nil = defaults to channelIndex for backward compat)
+			nil                       // inputMonitorSynth
 		).init(masterChannel);
 	}
 
@@ -80,15 +82,46 @@ ClipChannel {
 	// monitoring) and to this channel's dedicated inputBus (what ClipSlot's
 	// recorder/overdub synths actually read from)
 	createInputMonitor {
+		if (hardwareInputIndex.isNil, {
+			"ClipChannel[%]: No hardware input assigned, skipping input monitor".format(channelIndex).postln;
+			^this;
+		});
+
 		server.bind {
 			var mixerInBus = mixerChannel.inbus;
 
-			Synth(\inputMonitor, [
+			inputMonitorSynth = Synth(\inputMonitor, [
 				\hardwareIn, hardwareInputIndex,  // Use explicit hardware input mapping
 				\mixerIn, mixerInBus,
 				\recordBus, inputBus
 			], recorderGroup, \addToHead);
 		};
+	}
+
+	// Dynamically change which hardware input this channel reads from
+	setHardwareInput { |newInputIndex|
+		if (newInputIndex == hardwareInputIndex, {
+			"ClipChannel[%]: Input already set to %".format(channelIndex, newInputIndex).postln;
+			^this;
+		});
+
+		hardwareInputIndex = newInputIndex;
+
+		// Free existing input monitor if it exists
+		if (inputMonitorSynth.notNil, {
+			inputMonitorSynth.free;
+			inputMonitorSynth = nil;
+		});
+
+		// Create new input monitor if newInputIndex is not nil
+		if (newInputIndex.notNil, {
+			this.createInputMonitor;
+			"ClipChannel[%]: Input changed to hardware input %".format(
+				channelIndex, newInputIndex).postln;
+		}, {
+			"ClipChannel[%]: Input disconnected (no hardware input)".format(
+				channelIndex).postln;
+		});
 	}
 
 	// Get a specific slot

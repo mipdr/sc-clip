@@ -200,6 +200,14 @@ SCClip {
 		grid.addChannelEffect(channelIndex, synthDef, args, slot);
 	}
 
+	setChannelInput { |channelIndex, inputIndex|
+		grid.setChannelInput(channelIndex, inputIndex);
+	}
+
+	getChannelInput { |channelIndex|
+		^grid.getChannelInput(channelIndex);
+	}
+
 	// Master controls
 	setMasterLevel { |db|
 		masterBus.setMasterLevel(db);
@@ -483,6 +491,7 @@ SCClip {
 					\pan -> channel.mixerChannel.pan,
 					\isMuted -> channel.mixerChannel.muted,
 					\isSoloed -> channel.isSoloed,
+					\hardwareInputIndex -> channel.hardwareInputIndex,  // Save input mapping
 					\slots -> channel.slots.collect { |slot, slotIdx|
 						if (slot.hasAudio, {
 							Dictionary[
@@ -690,6 +699,11 @@ SCClip {
 			}, {
 				channel.setLevel(channelData[\level].ampdb);
 				channel.setPan(channelData[\pan]);
+
+				// Restore input mapping if saved
+				if (channelData[\hardwareInputIndex].notNil, {
+					channel.setHardwareInput(channelData[\hardwareInputIndex]);
+				});
 			});
 
 			if (channelData[\isMuted], { channel.mute });
