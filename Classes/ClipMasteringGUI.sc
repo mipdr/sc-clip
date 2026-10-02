@@ -194,7 +194,7 @@ ClipMasteringGUI {
 			this.masterControls,
 			HLayout(
 				[this.eqControls, stretch: 1],
-				[VLayout(this.compressorControls, this.limiterControls, nil).margins_(0).spacing_(20), stretch: 1]
+				[VLayout(this.compressorTypeSelector, this.compressorControls, this.boumControls, this.limiterControls, nil).margins_(0).spacing_(20), stretch: 1]
 			).margins_(0).spacing_(40),
 			this.presets,
 			HLayout(this.applyButton, nil),
@@ -281,8 +281,44 @@ ClipMasteringGUI {
 		).margins_(0).spacing_(8);
 	}
 
-	compressorControls {
+	compressorTypeSelector {
+		var dropdown = PopUpMenu()
+			.items_(["Glue Compressor", "Boum"])
+			.fixedHeight_(30)
+			.action_({ |menu|
+				var type = [\glueComp, \boum][menu.value];
+				clip.masterBus.setCompressorType(type);
+				// Show/hide appropriate controls
+				this.updateCompressorVisibility(type);
+			})
+			.value_(0);  // Default to Glue Compressor
+
+		controlViews[\compressorType] = dropdown;
+
 		^VLayout(
+			this.heading("COMPRESSOR TYPE", 16, Color.white),
+			HLayout(dropdown, nil)
+		).margins_(0).spacing_(8);
+	}
+
+	updateCompressorVisibility { |type|
+		// Show/hide compressor sections based on type
+		case
+		{ type == \glueComp } {
+			controlViews[\compressorSection].visible_(true);
+			controlViews[\boumSection].visible_(false);
+		}
+		{ type == \boum } {
+			controlViews[\compressorSection].visible_(false);
+			controlViews[\boumSection].visible_(true);
+		};
+	}
+
+	compressorControls {
+		var section = View()
+			.background_(ClipMasteringGUI.panelColor);
+
+		section.layout = VLayout(
 			this.heading("GLUE COMPRESSOR"),
 			this.param(\thresh, "Threshold", ControlSpec(-40, 0, \lin, 0.1, -12, "dB")),
 			this.param(\ratio, "Ratio", ControlSpec(1, 20, \lin, 0.1, 3, ":1")),
@@ -290,6 +326,60 @@ ClipMasteringGUI {
 			this.param(\release, "Release", ControlSpec(0.01, 2, \exp, 0.01, 0.3, "s")),
 			this.param(\makeupGain, "Makeup Gain", ControlSpec(-12, 24, \lin, 0.1, 0, "dB"))
 		).margins_(0).spacing_(8);
+
+		controlViews[\compressorSection] = section;
+		^section;
+	}
+
+	boumControls {
+		var typeSelector, scHPFSelector;
+		var section = View()
+			.background_(ClipMasteringGUI.panelColor)
+			.visible_(false);  // Hidden by default
+
+		// Distortion type selector
+		typeSelector = PopUpMenu()
+			.items_(["Boost (Soft Clip)", "Tube (Asymmetric)", "Fuzz (Hard Clip)", "Square (Extreme)"])
+			.fixedHeight_(25);
+		controlViews[\boumType] = typeSelector;
+
+		// Sidechain HPF selector
+		scHPFSelector = PopUpMenu()
+			.items_(["20 Hz", "75 Hz", "250 Hz"])
+			.fixedHeight_(25);
+		controlViews[\boumScHPF] = scHPFSelector;
+
+		section.layout = VLayout(
+			this.heading("BOUM"),
+
+			this.subheading("Gate"),
+			this.param(\boumGateThresh, "Threshold", ControlSpec(-80, -20, \lin, 0.1, -60, "dB")),
+
+			this.subheading("Compressor"),
+			this.param(\boumThresh, "Threshold", ControlSpec(-40, 0, \lin, 0.1, -12, "dB")),
+			this.param(\boumRatio, "Ratio", ControlSpec(1, 20, \lin, 0.1, 3, ":1")),
+			this.param(\boumAttack, "Attack", ControlSpec(0.001, 0.1, \exp, 0.001, 0.01, "s")),
+			this.param(\boumRelease, "Release", ControlSpec(0.01, 2, \exp, 0.01, 0.3, "s")),
+			HLayout(
+				StaticText().string_("Sidechain HPF").stringColor_(ClipMasteringGUI.textColor).fixedSize_(120@22),
+				[scHPFSelector, stretch: 1]
+			).margins_(0).spacing_(10),
+
+			this.subheading("Distortion"),
+			HLayout(
+				StaticText().string_("Type").stringColor_(ClipMasteringGUI.textColor).fixedSize_(120@22),
+				[typeSelector, stretch: 1]
+			).margins_(0).spacing_(10),
+			this.param(\boumDrive, "Drive", ControlSpec(-12, 24, \lin, 0.1, 0, "dB")),
+
+			this.subheading("Filter & Mix"),
+			this.param(\boumHicut, "Hi-Cut", ControlSpec(1000, 20000, \exp, 1, 20000, "Hz")),
+			this.param(\boumMakeupGain, "Makeup Gain", ControlSpec(-12, 24, \lin, 0.1, 0, "dB")),
+			this.param(\boumMix, "Dry/Wet Mix", ControlSpec(0, 1, \lin, 0.01, 1, ""))
+		).margins_(0).spacing_(8);
+
+		controlViews[\boumSection] = section;
+		^section;
 	}
 
 	limiterControls {
@@ -370,6 +460,8 @@ ClipMasteringGUI {
 	}
 
 	applySettings {
+		var compType = [\glueComp, \boum][controlViews[\compressorType].value];
+
 		"Applying mastering settings...".postln;
 
 		clip.masterBus.setEQ(
@@ -382,13 +474,32 @@ ClipMasteringGUI {
 			hiGain: controlViews[\hiGain].value
 		);
 
-		clip.masterBus.setCompressor(
-			thresh: controlViews[\thresh].value,
-			ratio: controlViews[\ratio].value,
-			attack: controlViews[\attack].value,
-			release: controlViews[\release].value,
-			makeupGain: controlViews[\makeupGain].value
-		);
+		// Apply compressor settings based on type
+		case
+		{ compType == \glueComp } {
+			clip.masterBus.setCompressor(
+				thresh: controlViews[\thresh].value,
+				ratio: controlViews[\ratio].value,
+				attack: controlViews[\attack].value,
+				release: controlViews[\release].value,
+				makeupGain: controlViews[\makeupGain].value
+			);
+		}
+		{ compType == \boum } {
+			clip.masterBus.setBoum(
+				thresh: controlViews[\boumThresh].value,
+				ratio: controlViews[\boumRatio].value,
+				attack: controlViews[\boumAttack].value,
+				release: controlViews[\boumRelease].value,
+				scHPF: controlViews[\boumScHPF].value,
+				drive: controlViews[\boumDrive].value,
+				type: controlViews[\boumType].value,
+				hicut: controlViews[\boumHicut].value,
+				gateThresh: controlViews[\boumGateThresh].value,
+				makeupGain: controlViews[\boumMakeupGain].value,
+				mix: controlViews[\boumMix].value
+			);
+		};
 
 		clip.masterBus.setLimiter(
 			ceiling: controlViews[\ceiling].value,

@@ -123,6 +123,102 @@ ClipSynthDefs {
 			ReplaceOut.ar(outBus, sig);
 		}).add;
 
+		// Boum effect: bus compressor + distortion + hi-cut + gate
+		// Inspired by OTO BOUM hardware unit
+		SynthDef(\masterBoum, { |inBus, outBus,
+			thresh= -12, ratio=3,
+			attack=0.01, release=0.3,
+			scHPF=0,  // Sidechain HPF: 0=20Hz, 1=75Hz, 2=250Hz
+			drive=0, type=0,  // Distortion: drive in dB, type 0-3
+			hicut=20000,  // Hi-cut filter frequency
+			gateThresh= -60,  // Gate threshold (fully open at minimum)
+			makeupGain=0,
+			mix=1,  // Dry/wet mix
+			bypass=0|
+
+			var sig, dry, wet, sc, scFreq, env, gr, distorted, distGain;
+			var lagTime = 0.05;
+
+			sig = In.ar(inBus, 2);
+			dry = sig;
+
+			// Lag continuous parameters to avoid zipper noise
+			thresh = Lag.kr(thresh, lagTime);
+			ratio = Lag.kr(ratio, lagTime);
+			attack = Lag.kr(attack, lagTime);
+			release = Lag.kr(release, lagTime);
+			drive = Lag.kr(drive, lagTime);
+			hicut = Lag.kr(hicut, lagTime);
+			gateThresh = Lag.kr(gateThresh, lagTime);
+			makeupGain = Lag.kr(makeupGain, lagTime);
+			mix = Lag.kr(mix, lagTime);
+
+			// === GATE ===
+			// Simple downward expander - fully open at minimum setting
+			env = Amplitude.kr(sig.sum, attack, release);
+			gr = (env.ampdb - gateThresh).max(0) / (0 - gateThresh).max(0.1);
+			sig = sig * gr.lag(0.01);
+
+			// === COMPRESSOR ===
+			// Stereo-linked detector (mono sum for sidechain)
+			sc = sig.sum * 0.5;  // Mono sum
+
+			// Sidechain HPF: 20/75/250 Hz
+			scFreq = Select.kr(scHPF, [20, 75, 250]);
+			sc = HPF.ar(sc, scFreq);
+
+			// Amplitude follower
+			env = Amplitude.kr(sc, attack, release);
+
+			// Gain reduction calculation (dB domain)
+			// Soft knee (2 dB width)
+			gr = (env.ampdb - thresh).max(0);
+			gr = (gr * (1 - (1/ratio))).neg;
+			gr = gr.dbamp;
+
+			sig = sig * gr;
+
+			// === DISTORTION ===
+			// Type 0: boost (soft clip)
+			// Type 1: tube (asymmetric tanh + DC blocking)
+			// Type 2: fuzz (hard clip)
+			// Type 3: square (extreme gain + clip)
+			// NOTE: fuzz and square will alias at 48kHz; no oversampling for CPU budget
+
+			distGain = drive.dbamp;
+
+			distorted = Select.ar(type, [
+				// Type 0: Boost (soft clip with tanh)
+				(sig * distGain * 2).tanh * 0.5,
+
+				// Type 1: Tube (asymmetric tanh + LeakDC for bias)
+				LeakDC.ar(((sig * distGain * 3) + 0.1).tanh * 0.4),
+
+				// Type 2: Fuzz (hard clip) - aliases at 48k
+				(sig * distGain * 5).clip2(0.8) * 0.8,
+
+				// Type 3: Square (extreme gain + clip) - aliases at 48k
+				(sig * distGain * 20).clip2(0.7) * 0.7
+			]);
+
+			sig = distorted;
+
+			// === HI-CUT FILTER ===
+			sig = LPF.ar(sig, hicut);
+
+			// === MAKEUP GAIN ===
+			sig = sig * makeupGain.dbamp;
+
+			// === DRY/WET MIX ===
+			wet = sig;
+			sig = (dry * (1 - mix)) + (wet * mix);
+
+			// === BYPASS ===
+			sig = Select.ar(bypass, [sig, dry]);
+
+			ReplaceOut.ar(outBus, sig);
+		}).add;
+
 		// Brick-wall limiter for master bus
 		SynthDef(\limiter, { |inBus, outBus, ceiling= -0.3, dur=0.01|
 			var sig = In.ar(inBus, 2);
@@ -172,6 +268,71 @@ ClipSynthDefs {
 			var sig = In.ar(out, 1);
 			var driven = (sig * (1 + (drive * 20))).tanh;
 			ReplaceOut.ar(out, (sig * (1 - mix)) + (driven * mix));
+		}).add;
+
+		// Boum effect (mono/channel version): compressor + distortion + hi-cut + gate
+		SynthDef(\channelBoum, { |out,
+			thresh= -12, ratio=3,
+			attack=0.01, release=0.3,
+			scHPF=0,  // Sidechain HPF: 0=20Hz, 1=75Hz, 2=250Hz
+			drive=0, type=0,  // Distortion: drive in dB, type 0-3
+			hicut=20000,  // Hi-cut filter frequency
+			gateThresh= -60,  // Gate threshold
+			makeupGain=0,
+			mix=1|  // Dry/wet mix
+
+			var sig, dry, wet, sc, scFreq, env, gr, distorted, distGain;
+			var lagTime = 0.05;
+
+			sig = In.ar(out, 1);
+			dry = sig;
+
+			// Lag continuous parameters
+			thresh = Lag.kr(thresh, lagTime);
+			ratio = Lag.kr(ratio, lagTime);
+			attack = Lag.kr(attack, lagTime);
+			release = Lag.kr(release, lagTime);
+			drive = Lag.kr(drive, lagTime);
+			hicut = Lag.kr(hicut, lagTime);
+			gateThresh = Lag.kr(gateThresh, lagTime);
+			makeupGain = Lag.kr(makeupGain, lagTime);
+			mix = Lag.kr(mix, lagTime);
+
+			// Gate
+			env = Amplitude.kr(sig, attack, release);
+			gr = (env.ampdb - gateThresh).max(0) / (0 - gateThresh).max(0.1);
+			sig = sig * gr.lag(0.01);
+
+			// Compressor with sidechain HPF
+			scFreq = Select.kr(scHPF, [20, 75, 250]);
+			sc = HPF.ar(sig, scFreq);
+			env = Amplitude.kr(sc, attack, release);
+			gr = (env.ampdb - thresh).max(0);
+			gr = (gr * (1 - (1/ratio))).neg;
+			gr = gr.dbamp;
+			sig = sig * gr;
+
+			// Distortion
+			distGain = drive.dbamp;
+			distorted = Select.ar(type, [
+				(sig * distGain * 2).tanh * 0.5,
+				LeakDC.ar(((sig * distGain * 3) + 0.1).tanh * 0.4),
+				(sig * distGain * 5).clip2(0.8) * 0.8,
+				(sig * distGain * 20).clip2(0.7) * 0.7
+			]);
+			sig = distorted;
+
+			// Hi-cut filter
+			sig = LPF.ar(sig, hicut);
+
+			// Makeup gain
+			sig = sig * makeupGain.dbamp;
+
+			// Dry/wet mix
+			wet = sig;
+			sig = (dry * (1 - mix)) + (wet * mix);
+
+			ReplaceOut.ar(out, sig);
 		}).add;
 
 	}

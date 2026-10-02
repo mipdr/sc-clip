@@ -29,7 +29,7 @@ Native SuperCollider GUI for controlling the mastering chain. Features a Max-sty
 
 ### Signal Flow Diagram (Top Section)
 ```
-Channels → Master → EQ → Compressor → Limiter → Out
+Channels → Master → EQ → Compressor (Glue or Boum) → Limiter → Out
 ```
 
 The diagram shows:
@@ -71,24 +71,35 @@ w.onClose = { ~meter.free };
    - **Parametric Mid**: Frequency (200-8000 Hz), Gain (-12 to +12 dB), Q (0.5-5)
    - **High Shelf**: Frequency (2-20 kHz), Gain (-12 to +12 dB)
 
-3. **Glue Compressor**
+3. **Compressor Type Selector**
+   - Dropdown menu to choose between:
+     - **Glue Compressor**: Clean bus compression
+     - **Boum**: Bus compressor + distortion + hi-cut + gate (inspired by OTO BOUM)
+
+4. **Glue Compressor** (visible when Glue Compressor selected)
    - Threshold (-40 to 0 dB)
    - Ratio (1:1 to 20:1)
    - Attack (1-100 ms)
    - Release (10-2000 ms)
    - Makeup Gain (-12 to +24 dB)
 
-4. **Brick-Wall Limiter**
+5. **Boum** (visible when Boum selected)
+   - **Gate**: Threshold (-80 to -20 dB)
+   - **Compressor**: Threshold, Ratio, Attack, Release, Sidechain HPF (20/75/250 Hz)
+   - **Distortion**: Type (Boost/Tube/Fuzz/Square), Drive (-12 to +24 dB)
+   - **Filter & Mix**: Hi-Cut (1-20 kHz), Makeup Gain, Dry/Wet Mix
+
+6. **Brick-Wall Limiter**
    - Ceiling (-6 to 0 dB)
    - Lookahead (1-50 ms)
 
-5. **Presets**
+7. **Presets**
    - Neutral (Bypass)
    - Live Performance
    - Punchy/Loud
    - Warm/Subtle
 
-6. **Apply Button**
+8. **Apply Button**
    - Updates the actual mastering chain with current settings
 
 ## Using the GUI
@@ -312,9 +323,102 @@ Potential additions:
 - Preset save/load to disk
 - Undo/redo for parameter changes
 
+## Boum Effect
+
+The **Boum** compressor is an all-in-one bus processor inspired by the OTO BOUM hardware unit. It combines compression, distortion, filtering, and gating in a single effect designed for aggressive bus processing and creative tone shaping.
+
+### Signal Chain
+
+```
+Input → Gate → Compressor → Distortion → Hi-Cut Filter → Makeup → Dry/Wet Mix → Output
+```
+
+### When to Use Boum vs. Glue Compressor
+
+**Use Glue Compressor when:**
+- You need transparent, clean bus compression
+- Working with acoustic/classical music
+- Seeking subtle dynamic control
+- CPU efficiency is critical
+
+**Use Boum when:**
+- You want coloration and character
+- Working with electronic/experimental music
+- Seeking aggressive, punchy compression
+- Looking for creative distortion options
+
+### Boum Parameters Explained
+
+#### Gate
+- **Threshold** (-80 to -20 dB): Reduces noise floor by attenuating signals below this level
+- At minimum (-60 dB default), the gate is fully open
+- Useful when using high drive to prevent noise amplification
+
+#### Compressor
+- **Threshold** (-40 to 0 dB): Level above which compression kicks in
+- **Ratio** (1:1 to 20:1): Amount of gain reduction applied
+- **Attack** (1-100 ms): How quickly the compressor responds
+- **Release** (10-2000 ms): How quickly compression releases
+- **Sidechain HPF** (20/75/250 Hz): High-pass filter on the detector signal
+  - **20 Hz**: Full-range compression (default)
+  - **75 Hz**: Reduces bass pumping, focuses on mids/highs
+  - **250 Hz**: Heavy bass reduction, compression driven by vocals/snare
+
+#### Distortion
+- **Type**: Four distortion algorithms with different characteristics
+  - **Boost (Soft Clip)**: Gentle tanh saturation, transparent warmth
+  - **Tube (Asymmetric)**: Asymmetric tanh with DC bias, vintage tube character
+  - **Fuzz (Hard Clip)**: Hard clipping, aggressive lo-fi (aliases at 48kHz)
+  - **Square (Extreme)**: Extreme gain + clip, experimental destruction (heavy aliasing)
+- **Drive** (-12 to +24 dB): Amount of gain applied before distortion stage
+- Output level is compensated per type to avoid volume jumps when switching
+
+#### Filter & Mix
+- **Hi-Cut** (1-20 kHz): Low-pass filter to darken the tone
+  - Try 6-8 kHz for vintage vibe
+  - Full bandwidth (20kHz) for modern sound
+- **Makeup Gain** (-12 to +24 dB): Compensate for gain reduction
+- **Dry/Wet Mix** (0-1): Blend between unprocessed (0) and fully processed (1)
+  - Mix < 1.0 enables parallel compression
+
+### Boum Presets
+
+See [Examples/boum_effect_example.scd](../Examples/boum_effect_example.scd) for preset examples:
+- **Warm Crunch**: Tube distortion, gentle compression, dark tone
+- **Heavy Fuzz**: Aggressive fuzz, high ratio, sidechain HPF at 250 Hz
+- **Clean Boost**: Transparent soft clip, subtle compression
+
+### Important Notes
+
+⚠️ **Aliasing Warning**: Fuzz and Square distortion types will alias at 48kHz (no oversampling implemented for CPU budget). Use them creatively or sparingly on material where aliasing artifacts enhance rather than detract.
+
+💡 **Parallel Compression Tip**: Set Mix to 0.5-0.7 to blend compressed and dry signals, maintaining dynamics while adding punch.
+
+🎛️ **CPU Usage**: Boum uses hand-built compression (not Compander) for stereo-linked operation. CPU usage is comparable to Glue Compressor on typical systems.
+
+### Channel-Level Boum
+
+Boum can also be used as a per-channel insert effect:
+
+```supercollider
+// Add to channel 0
+~clip.channels[0].addEffect(\channelBoum);
+
+// Adjust parameters
+~clip.channels[0].setEffectParam(\channelBoum, \type, 1);  // Tube
+~clip.channels[0].setEffectParam(\channelBoum, \drive, 6);
+~clip.channels[0].setEffectParam(\channelBoum, \mix, 0.8);
+
+// Remove when done
+~clip.channels[0].removeEffect(\channelBoum);
+```
+
+See [Examples/boum_effect_example.scd](../Examples/boum_effect_example.scd) for complete channel-level usage.
+
 ## See Also
 
-- [Examples/mastering_gui_example.scd](../Examples/mastering_gui_example.scd) - Usage example
+- [Examples/mastering_gui_example.scd](../Examples/mastering_gui_example.scd) - Mastering GUI usage
 - [Examples/mastering_gui_demo.scd](../Examples/mastering_gui_demo.scd) - Standalone demo (doesn't require SC-Clip)
+- [Examples/boum_effect_example.scd](../Examples/boum_effect_example.scd) - Boum effect examples and presets
 - SuperCollider GUI documentation: `GUI.help` in SC
 - Pen API: `Pen.help` in SC

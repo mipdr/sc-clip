@@ -10,6 +10,7 @@ ClipMasterBus {
 	var <server;
 	var <eqSynth;
 	var <compSynth;
+	var <compressorType;  // Current compressor type: \glueComp or \boum
 	var <limiterSynth;
 	var <limiterCeiling = -0.3;  // dB
 	var <limiterDur = 0.01;      // lookahead, seconds
@@ -20,6 +21,7 @@ ClipMasterBus {
 			server ? Server.default,  // server
 			nil,                      // eqSynth
 			nil,                      // compSynth
+			\glueComp,                // compressorType (default)
 			nil                       // limiterSynth
 		).init;
 	}
@@ -69,16 +71,8 @@ ClipMasterBus {
 			\hiGain, 0
 		]);
 
-		// Glue compressor (gentle by default)
-		compSynth = mixerChannel.playfx(\glueComp, [
-			\inBus, bus,
-			\outBus, bus,
-			\thresh, -12,
-			\ratio, 3,
-			\attack, 0.01,
-			\release, 0.3,
-			\makeupGain, 0
-		]);
+		// Compressor (type determined by compressorType)
+		this.prCreateCompressor(bus);
 
 		// Limiter (safety ceiling at -0.3 dB)
 		limiterSynth = mixerChannel.playfx(\limiter, [
@@ -168,6 +162,114 @@ ClipMasterBus {
 
 		"ClipMasterBus: Limiter updated (ceiling: % dB, lookahead: % s)"
 			.format(limiterCeiling, limiterDur).postln;
+	}
+
+	// Boum controls
+	setBoum { |thresh, ratio, attack, release, scHPF, drive, type, hicut, gateThresh, makeupGain, mix, bypass|
+		if (compSynth.isNil, {
+			"ClipMasterBus: Compressor not active - call addMasteringChain first".warn;
+			^this;
+		});
+
+		if (compressorType != \boum, {
+			"ClipMasterBus: Current compressor is %, not \\boum - call setCompressorType(\\boum) first".format(compressorType).warn;
+			^this;
+		});
+
+		if (thresh.notNil, { compSynth.set(\thresh, thresh) });
+		if (ratio.notNil, { compSynth.set(\ratio, ratio) });
+		if (attack.notNil, { compSynth.set(\attack, attack) });
+		if (release.notNil, { compSynth.set(\release, release) });
+		if (scHPF.notNil, { compSynth.set(\scHPF, scHPF) });
+		if (drive.notNil, { compSynth.set(\drive, drive) });
+		if (type.notNil, { compSynth.set(\type, type) });
+		if (hicut.notNil, { compSynth.set(\hicut, hicut) });
+		if (gateThresh.notNil, { compSynth.set(\gateThresh, gateThresh) });
+		if (makeupGain.notNil, { compSynth.set(\makeupGain, makeupGain) });
+		if (mix.notNil, { compSynth.set(\mix, mix) });
+		if (bypass.notNil, { compSynth.set(\bypass, bypass) });
+
+		"ClipMasterBus: Boum updated".postln;
+	}
+
+	// Set compressor type (\glueComp or \boum)
+	// Swaps the compressor synth while maintaining EQ -> compressor -> limiter order
+	setCompressorType { |type|
+		var bus = mixerChannel.inbus;
+
+		if (#[\glueComp, \boum].includes(type).not, {
+			"ClipMasterBus: Invalid compressor type % - must be \\glueComp or \\boum".format(type).error;
+			^this;
+		});
+
+		if (type == compressorType, {
+			"ClipMasterBus: Compressor type already %".format(type).postln;
+			^this;
+		});
+
+		compressorType = type;
+
+		// If mastering chain is active, swap the compressor
+		if (compSynth.notNil, {
+			// Free old compressor
+			compSynth.free;
+
+			// Create new compressor
+			this.prCreateCompressor(bus);
+
+			// Ensure limiter is still at the end by recreating it
+			// (playfx adds at tail, so we need to explicitly reorder)
+			limiterSynth = Synth.replace(limiterSynth, \limiter, [
+				\inBus, bus,
+				\outBus, bus,
+				\ceiling, limiterCeiling,
+				\dur, limiterDur
+			]);
+
+			"ClipMasterBus: Compressor type changed to % (chain: EQ → % → Limiter)".format(type, type).postln;
+		}, {
+			"ClipMasterBus: Compressor type set to % (will be used when mastering chain is added)".format(type).postln;
+		});
+	}
+
+	// Private: Create compressor synth based on compressorType
+	prCreateCompressor { |bus|
+		var synthDef, args;
+
+		case
+		{ compressorType == \glueComp } {
+			synthDef = \glueComp;
+			args = [
+				\inBus, bus,
+				\outBus, bus,
+				\thresh, -12,
+				\ratio, 3,
+				\attack, 0.01,
+				\release, 0.3,
+				\makeupGain, 0
+			];
+		}
+		{ compressorType == \boum } {
+			synthDef = \masterBoum;
+			args = [
+				\inBus, bus,
+				\outBus, bus,
+				\thresh, -12,
+				\ratio, 3,
+				\attack, 0.01,
+				\release, 0.3,
+				\scHPF, 0,
+				\drive, 0,
+				\type, 0,
+				\hicut, 20000,
+				\gateThresh, -60,
+				\makeupGain, 0,
+				\mix, 1,
+				\bypass, 0
+			];
+		};
+
+		compSynth = mixerChannel.playfx(synthDef, args);
 	}
 
 	// Bypass mastering (mute/unmute master)
