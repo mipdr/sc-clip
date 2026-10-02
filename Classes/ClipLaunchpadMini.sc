@@ -5,14 +5,25 @@
  * Handles Launchpad-specific MIDI protocol, button mapping, and LED colors.
  *
  * Grid Layout (XY mode):
- *   - 8x8 grid: Columns 0-6 = channels (7 channels), Column 7 = controls
- *   - Rows 0-3 = clip slots (for columns 0-6)
+ *   - 8x8 grid
+ *   - Columns 0-3: Audio channels (4 channels)
+ *   - Columns 4-5: MIDI channels (2 channels)
+ *   - Column 6: Reserved
+ *   - Column 7: Controls (clip length selector + metronome)
+ *   - Rows 0-5: Clip slots (6 slots per channel)
+ *   - Row 6: Channel selector (for input mapping, cols 0-3)
+ *   - Row 7: Input selector (for input mapping, cols 0-3) + metronome (col 7)
  *   - Column 7, Rows 0-6 = binary clip length selector (1, 2, 4, 8, 16, 32, 64 bars)
  *     Multiple buttons can be selected simultaneously to express any bar length (1-127).
  *     Selected bits lit orange, unselected green.
  *     Examples: [2] = 2 bars, [1,2,4] = 7 bars, [1,4,8,16] = 29 bars
  *   - Row 7, Col 7 = metronome on/off (lit amber when on)
  *   - MIDI note = (row * 16) + col
+ *
+ * Input-to-Channel Mapping (rows 6-7, cols 0-3):
+ *   - Row 7 (cols 0-3): Input selector - press to select which input to configure
+ *   - Row 6 (cols 0-3): Channel selector - press to map selected input to channel
+ *   - Green = unselected, Orange = selected/mapped
  *
  * LED Colors (via velocity):
  *   - 12 = off
@@ -27,10 +38,16 @@ ClipLaunchpadMini : ClipGridController {
 	var <clipLengthBars;      // Currently selected clip length in bars (sum of binary selections)
 	var <clipLengthOptions;   // Array of binary place values (powers of 2)
 	var <clipLengthSelections; // Set of selected binary places (e.g., Set[1, 2] for 3 bars)
+	var <selectedInputIndex;  // Currently selected input for mapping (nil = none selected)
+	var <numAudioChannels;    // Number of audio channels (for input mapping UI)
 
-	*new { |grid, transport, numRows = 4, numCols = 7|
-		// Note: numCols = 7 for clip channels, column 7 is used for controls
-		^super.new(grid, transport, numRows, numCols).initClipLength;
+	*new { |grid, transport, numRows = 6, numCols = 6, numAudioChannels = 4|
+		// numRows = 6 for clip slots (rows 0-5)
+		// numCols = 6 total columns used for clips (cols 0-5: 4 audio + 2 MIDI)
+		// numAudioChannels = 4 for input mapping UI (rows 6-7, cols 0-3)
+		^super.new(grid, transport, numRows, numCols)
+			.initClipLength
+			.initInputMapping(numAudioChannels);
 	}
 
 	// Initialize clip length settings
@@ -40,6 +57,12 @@ ClipLaunchpadMini : ClipGridController {
 		// Start with 2 bars selected (just the "2" bit)
 		clipLengthSelections = Set[2];
 		clipLengthBars = 2;
+	}
+
+	// Initialize input mapping
+	initInputMapping { |numAudio|
+		numAudioChannels = numAudio;
+		selectedInputIndex = nil;
 	}
 
 	// Convert bars to beats based on current time signature
@@ -162,8 +185,20 @@ ClipLaunchpadMini : ClipGridController {
 		"ClipLaunchpadMini: MIDI responders installed".postln;
 	}
 
-	// Handle button press - routes to clip length selector or metronome or parent
+	// Handle button press - routes to clip length selector or metronome or input mapping or parent
 	handleButtonPress { |row, col, velocity, isNoteOn|
+		// Row 7 (input selector), cols 0-3
+		if (row == 7 and: { col < numAudioChannels }, {
+			if (isNoteOn, { this.selectInput(col) });
+			^this;
+		});
+
+		// Row 6 (channel selector), cols 0-3 - only active if input selected
+		if (row == 6 and: { col < numAudioChannels } and: { selectedInputIndex.notNil }, {
+			if (isNoteOn, { this.mapInputToChannel(selectedInputIndex, col) });
+			^this;
+		});
+
 		// Column 7, rows 0-6: Clip length selector
 		if (col == 7 and: { row >= 0 } and: { row < clipLengthOptions.size }, {
 			if (isNoteOn, { this.selectClipLength(row) });
@@ -222,6 +257,29 @@ ClipLaunchpadMini : ClipGridController {
 		this.updateMetronomeLED;
 	}
 
+	// Select which input to configure for mapping
+	selectInput { |inputIndex|
+		if (selectedInputIndex == inputIndex, {
+			// Deselect if clicking same input again
+			selectedInputIndex = nil;
+			"ClipLaunchpadMini: Input deselected".postln;
+		}, {
+			selectedInputIndex = inputIndex;
+			"ClipLaunchpadMini: Selected input % for mapping".format(inputIndex).postln;
+		});
+
+		this.updateInputMappingLEDs;
+	}
+
+	// Map selected input to a channel
+	mapInputToChannel { |inputIdx, channelIdx|
+		grid.setChannelInput(channelIdx, inputIdx);
+
+		"ClipLaunchpadMini: Mapped input % to channel %".format(inputIdx, channelIdx).postln;
+
+		this.updateInputMappingLEDs;
+	}
+
 	// Update clip length selector LEDs (column 7, rows 0-6)
 	// Shows binary selection: selected bits are orange, unselected are green
 	updateClipLengthLEDs {
@@ -237,6 +295,31 @@ ClipLaunchpadMini : ClipGridController {
 		this.sendLEDMessage(7, 7, if (transport.metronomeEnabled, \amber_high, \off));
 	}
 
+	// Update input/channel mapping LEDs (rows 6-7, cols 0-3)
+	updateInputMappingLEDs {
+		// Row 7 (input selector): Show all inputs, highlight selected
+		numAudioChannels.do { |inputIdx|
+			this.sendLEDMessage(7, inputIdx,
+				if (inputIdx == selectedInputIndex, \orange, \green));
+		};
+
+		// Row 6 (channel selector): Only show when input selected
+		numAudioChannels.do { |channelIdx|
+			var color;
+
+			if (selectedInputIndex.isNil, {
+				// No input selected: all green
+				color = \green;
+			}, {
+				// Input selected: highlight if this channel is mapped to selected input
+				var mappedInput = grid.getChannelInput(channelIdx);
+				color = if (mappedInput == selectedInputIndex, \orange, \green);
+			});
+
+			this.sendLEDMessage(6, channelIdx, color);
+		};
+	}
+
 	// Also track metronome state changes made elsewhere (sclang, session load)
 	updateBlinkingLEDs {
 		super.updateBlinkingLEDs;
@@ -246,12 +329,17 @@ ClipLaunchpadMini : ClipGridController {
 
 	updateAllLEDs {
 		super.updateAllLEDs;
-		// Resend the control column unconditionally, like the rest of the grid
-		// here (the cache can be stale, e.g. after the init animation's final
-		// "off" frame)
+		// Resend the control column and mapping rows unconditionally, like the
+		// rest of the grid here (the cache can be stale, e.g. after the init
+		// animation's final "off" frame)
 		8.do { |row| ledCache.removeAt((row * 100) + 7) };
+		numAudioChannels.do { |col|
+			ledCache.removeAt((6 * 100) + col);  // Row 6 (channel selector)
+			ledCache.removeAt((7 * 100) + col);  // Row 7 (input selector)
+		};
 		this.updateClipLengthLEDs;
 		this.updateMetronomeLED;
+		this.updateInputMappingLEDs;
 	}
 
 	// Convert MIDI note number to grid coordinates (XY mode)

@@ -346,6 +346,75 @@ ClipGrid {
 		"======================".postln;
 	}
 
+	// Input-to-channel mapping
+
+	// Set which hardware input a channel reads from
+	// channelIndex: Index of the channel to configure
+	// inputIndex: Hardware input index (0-based), or nil to disconnect
+	setChannelInput { |channelIndex, inputIndex|
+		var channel;
+
+		// Validate channel index
+		if (channelIndex < 0 or: { channelIndex >= channels.size }, {
+			"ClipGrid: Invalid channel index %".format(channelIndex).error;
+			^this;
+		});
+
+		channel = channels[channelIndex];
+
+		// Only audio channels support hardware input
+		if (channel.isKindOf(ClipMIDIChannel), {
+			"ClipGrid: Cannot set hardware input on MIDI channel %".format(channelIndex).error;
+			^this;
+		});
+
+		// Validate input index (can be nil to disconnect)
+		if (inputIndex.notNil and: {
+			inputIndex < 0 or: { inputIndex >= server.options.numInputBusChannels }
+		}, {
+			"ClipGrid: Invalid input index % (max: %)".format(
+				inputIndex, server.options.numInputBusChannels - 1).error;
+			^this;
+		});
+
+		// Check if another channel already uses this input
+		// (remove old mapping - only one channel can use an input at a time)
+		if (inputIndex.notNil, {
+			channels.do { |ch, idx|
+				if (ch.respondsTo(\hardwareInputIndex) and: {
+					ch.hardwareInputIndex == inputIndex and: { idx != channelIndex }
+				}, {
+					ch.setHardwareInput(nil);
+					"ClipGrid: Unmapped input % from channel % (reassigned to channel %)".format(
+						inputIndex, idx, channelIndex).postln;
+				});
+			};
+		});
+
+		// Set the new input
+		channel.setHardwareInput(inputIndex);
+
+		"ClipGrid: Channel % now reads from hardware input %".format(
+			channelIndex, inputIndex ?? "none").postln;
+	}
+
+	// Get which hardware input a channel is reading from
+	getChannelInput { |channelIndex|
+		var channel;
+
+		if (channelIndex < 0 or: { channelIndex >= channels.size }, {
+			^nil;
+		});
+
+		channel = channels[channelIndex];
+
+		if (channel.respondsTo(\hardwareInputIndex), {
+			^channel.hardwareInputIndex;
+		}, {
+			^nil;
+		});
+	}
+
 	// Cleanup
 
 	free {
