@@ -139,7 +139,9 @@ if (~midiOut.notNil, {
 
 /*
  * The Launchpad Mini provides:
- *   - 4x8 grid for triggering clips
+ *   - 6x6 clip grid: cols 0-3 audio, cols 4-5 MIDI, rows 0-5 clip slots
+ *   - Col 7: clip length selector (rows 0-6) + metronome (row 7)
+ *   - Rows 6-7, cols 0-3: input-to-channel mapping
  *   - Visual feedback via LED colors
  *   - Short press: arm/launch/stop clips
  *   - Long press: delete clip
@@ -149,12 +151,12 @@ if (~midiOut.notNil, {
 ~launchpad = ~clip.connectController(
 	controllerType: \launchpadMini,
 	deviceName: "Launchpad Mini",  // Adjust if your device name differs
-	numRows: 4,                     // 4 rows (matching 4 channels)
-	numCols: 8                      // 8 columns (matching 8 slots)
+	numRows: 6,                     // 6 clip slots (rows 0-5)
+	numCols: 6                      // 6 channels (cols 0-3 audio, 4-5 MIDI)
 );
 
 if (~launchpad.notNil, {
-	"Launchpad Mini connected (4x8 grid)".postln;
+	"Launchpad Mini connected (6x6 clip grid)".postln;
 }, {
 	"Failed to connect Launchpad Mini - check device name".warn;
 });

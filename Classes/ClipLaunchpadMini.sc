@@ -390,7 +390,7 @@ ClipLaunchpadMini : ClipGridController {
 		{ 12 };  // Default: off
 	}
 
-	// Override channel colors for Launchpad's palette (7 channels)
+	// Override channel colors for Launchpad's palette (cols 0-3 audio, 4-5 MIDI)
 	initChannelColors {
 		channelColors = [
 			\red_mid,      // Channel 0

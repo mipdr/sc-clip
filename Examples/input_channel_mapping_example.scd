@@ -160,7 +160,7 @@
  * Example flow:
  *   1. Press row 7, col 1 → Select input 1
  *   2. Row 6 now shows current mapping for input 1
- *   3. Press row 7, col 2 → Map input 1 to channel 2
+ *   3. Press row 6, col 2 → Map input 1 to channel 2
  *   4. Input 1 is now routed to channel 2
  */
 

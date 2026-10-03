@@ -349,8 +349,8 @@ SCClip {
 			controller = ClipLaunchpadMini.new(
 				grid,
 				transport,
-				numRows ? 4,   // Default 4 rows for clips
-				numCols ? 8    // Default 8 columns (channels)
+				numRows ? 6,   // Default 6 clip slots (rows 0-5)
+				numCols ? 6    // Default 6 channels (cols 0-3 audio, 4-5 MIDI)
 			);
 			// connect returns nil on failure (e.g. device not found) -- capture
 			// that here so connectController correctly reports failure too,

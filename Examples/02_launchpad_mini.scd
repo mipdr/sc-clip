@@ -32,8 +32,10 @@
 
 (
 s.waitForBoot {
-	// Create SC-Clip instance with 8 channels and 4 slots per channel
-	~clip = SCClip.new(numChannels: 8, numSlots: 4);
+	// Create SC-Clip instance with 4 audio channels and 6 slots per channel
+	// (Launchpad columns 0-3). Columns 4-5 are for MIDI channels -- see
+	// 05_midi_clips.scd for the channelConfig that sets those up.
+	~clip = SCClip.new(numChannels: 4, numSlots: 6);
 
 	~clip.boot({
 		"SC-Clip initialized!".postln;
@@ -81,7 +83,7 @@ MIDIClient.sources.do { |src, i|
 Now you can use your Launchpad Mini to control SC-Clip!
 
 Basic Workflow:
-1. Press any button on the top 4 rows (clips area)
+1. Press any button on the top 6 rows (clips area, columns 0-5)
 2. The LED will light up, and recording will start after quantization
 3. Play/sing into your microphone for 8 beats
 4. Recording automatically stops, and the clip starts looping
@@ -90,8 +92,10 @@ Basic Workflow:
 7. Hold the button for >1 second to delete the clip, then press again to re-record
 
 Tips:
-- Each column (0-7) is a separate channel with its own color
-- Each row (0-3) is a different clip slot
+- Each column (0-5) is a separate channel with its own color (0-3 audio, 4-5 MIDI)
+- Each row (0-5) is a different clip slot
+- Column 7 is the clip length selector (rows 0-6) and metronome toggle (row 7)
+- Rows 6-7, columns 0-3 map inputs to audio channels
 - All clips are quantized to beat boundaries for tight timing
 - Change tempo with: ~clip.setTempo(140);
 */
