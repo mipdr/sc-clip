@@ -17,6 +17,9 @@ ClipMasteringGUI {
 	var <signalFlowView;
 	var <levelMeter;
 	var <controlViews;
+	var <channelEffectDropdowns;  // Dictionary: [chanIdx, slotIdx] -> PopUpMenu
+	var <numAudioChannels = 4;
+	var <numEffectSlots = 3;
 	var <isActive = false;
 
 	*new { |clipInstance|
@@ -42,6 +45,7 @@ ClipMasteringGUI {
 
 	init {
 		controlViews = Dictionary.new;
+		channelEffectDropdowns = Dictionary.new;
 	}
 
 	show {
@@ -64,7 +68,8 @@ ClipMasteringGUI {
 			[VLayout(
 				[signalFlowView, stretch: 1],
 				[this.createControls, stretch: 3]
-			).margins_(0).spacing_(20), stretch: 1],
+			).margins_(0).spacing_(20), stretch: 2],
+			[this.channelEffectsControls, stretch: 1],
 			this.createMeters
 		).margins_(20).spacing_(20);
 
@@ -211,6 +216,132 @@ ClipMasteringGUI {
 			this.heading("LEVELS"),
 			[ClipLevelMeterView(levelMeter).view, stretch: 1]
 		).margins_(0).spacing_(8);
+	}
+
+	// Channel effects controls (right side of GUI)
+	channelEffectsControls {
+		var scrollView = ScrollView()
+			.background_(ClipMasteringGUI.panelColor)
+			.hasHorizontalScroller_(false);
+		var canvas = View().background_(ClipMasteringGUI.panelColor);
+
+		var table = GridLayout();
+		var effectNames = [\bypass] ++ ClipEffectRegistry.allNames;
+		var effectLabels = effectNames.collect { |name|
+			if (name == \bypass, {
+				"Bypass"
+			}, {
+				ClipEffectRegistry.get(name)[\displayName] ? name.asString
+			});
+		};
+
+		// Title
+		table.add(
+			StaticText()
+				.string_("CHANNEL EFFECTS")
+				.font_(Font("Helvetica-Bold", 16))
+				.stringColor_(ClipMasteringGUI.textColor)
+				.align_(\center),
+			0, 0, 1, numAudioChannels + 1
+		);
+
+		// Subtitle (signal flow indicator)
+		table.add(
+			StaticText()
+				.string_("(↑ signal flow: bottom to top)")
+				.font_(Font("Helvetica", 10))
+				.stringColor_(Color.gray(0.6))
+				.align_(\center),
+			1, 0, 1, numAudioChannels + 1
+		);
+
+		// Column headers (channel labels)
+		numAudioChannels.do { |chanIdx|
+			var label = StaticText()
+				.string_("Ch " ++ (chanIdx + 1))
+				.font_(Font("Helvetica-Bold", 12))
+				.stringColor_(ClipMasteringGUI.textColor)
+				.align_(\center);
+			table.add(label, 2, chanIdx + 1);
+		};
+
+		// Effect slots (reverse order: bottom = first, top = last)
+		(numEffectSlots - 1).reverseDo { |slotIdx|
+			var rowLabel = StaticText()
+				.string_(
+					"Slot " ++ slotIdx ++
+					if (slotIdx == 0, " →",
+						if (slotIdx == (numEffectSlots - 1), " ↑", " ↑"))
+				)
+				.font_(Font("Helvetica", 11))
+				.stringColor_(Color.gray(0.7))
+				.align_(\right);
+
+			var gridRow = 3 + (numEffectSlots - 1 - slotIdx);
+			table.add(rowLabel, gridRow, 0);
+
+			numAudioChannels.do { |chanIdx|
+				var dropdown = PopUpMenu()
+					.items_(effectLabels)
+					.font_(Font("Helvetica", 10))
+					.fixedHeight_(25)
+					.action_({ |menu|
+						this.changeChannelEffect(chanIdx, slotIdx,
+							effectNames[menu.value]);
+					});
+
+				channelEffectDropdowns[[chanIdx, slotIdx]] = dropdown;
+				table.add(dropdown, gridRow, chanIdx + 1);
+
+				// Sync to current effect
+				this.syncEffectDropdown(chanIdx, slotIdx);
+			};
+		};
+
+		canvas.layout = VLayout(table).margins_(15).spacing_(8);
+		scrollView.canvas = canvas;
+		^scrollView;
+	}
+
+	// Change channel effect
+	changeChannelEffect { |channelIndex, slotIndex, effectName|
+		var channel = clip.grid.getChannel(channelIndex);
+
+		if (effectName == \bypass, {
+			channel.removeEffect(slotIndex);
+			"Channel %: Slot % bypassed".format(channelIndex, slotIndex).postln;
+		}, {
+			var meta = ClipEffectRegistry.get(effectName);
+			var defaultArgs = [];
+
+			// Build default args from parameter specs
+			meta[\parameters].keysValuesDo { |param, spec|
+				defaultArgs = defaultArgs ++ [param, spec.default];
+			};
+
+			channel.addEffect(effectName, defaultArgs, slotIndex);
+			"Channel %: Slot % set to %".format(
+				channelIndex, slotIndex, meta[\displayName]).postln;
+		});
+	}
+
+	// Sync dropdown to current effect
+	syncEffectDropdown { |channelIndex, slotIndex|
+		var channel = clip.grid.getChannel(channelIndex);
+		var currentEffectName = channel.getEffectName(slotIndex);
+		var dropdown = channelEffectDropdowns[[channelIndex, slotIndex]];
+		var effectNames = [\bypass] ++ ClipEffectRegistry.allNames;
+
+		if (currentEffectName.isNil, {
+			dropdown.value_(0);  // Bypass
+		}, {
+			var index = effectNames.indexOf(currentEffectName);
+			if (index.notNil, {
+				dropdown.value_(index);
+			}, {
+				dropdown.value_(0);  // Bypass if not found
+			});
+		});
 	}
 
 	heading { |string, size = 14, color|

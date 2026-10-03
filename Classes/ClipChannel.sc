@@ -16,6 +16,8 @@ ClipChannel {
 	var <transport;  // ClipTransport reference
 	var <server;
 	var <effects;  // IdentityDictionary: slot -> running effect instance (from mixerChannel.playfx)
+	var <effectNames;  // IdentityDictionary: slot -> synthDefName symbol (for GUI sync and session save)
+	var <effectMainValues;  // IdentityDictionary: slot -> current main control value (for session save and MIDI)
 	var <isSoloed;  // ddwMixerChannel has no solo concept -- tracked here; actual
 	                // cross-channel silencing is done by ClipGrid:soloChannel/unSoloChannel
 	var <hardwareInputIndex;  // Which hardware input this channel reads from (nil = no input)
@@ -47,6 +49,8 @@ ClipChannel {
 			hardwareInputIndex = channelIndex;
 		});
 		effects = IdentityDictionary.new;
+		effectNames = IdentityDictionary.new;
+		effectMainValues = IdentityDictionary.new;
 
 		// Create node groups for this channel
 		server.bind {
@@ -257,6 +261,21 @@ ClipChannel {
 	addEffect { |synthDef, args, slot = 0|
 		if (effects[slot].notNil, { this.removeEffect(slot) });
 		effects[slot] = mixerChannel.playfx(synthDef, args);
+		effectNames[slot] = synthDef;
+
+		// Initialize main control value from args or default
+		var meta = ClipEffectRegistry.get(synthDef);
+		var mainParam = meta !? { meta[\mainControl] };
+		if (mainParam.notNil, {
+			var spec = meta[\parameters][mainParam];
+			var argIndex = args.indexOf(mainParam);
+			var value = if (argIndex.notNil, {
+				args[argIndex + 1];
+			}, {
+				spec.default;
+			});
+			effectMainValues[slot] = value;
+		});
 
 		"ClipChannel[%]: Added effect % at slot %".format(channelIndex, synthDef, slot).postln;
 	}
@@ -266,6 +285,8 @@ ClipChannel {
 		if (running.notNil, {
 			running.free;
 			effects.removeAt(slot);
+			effectNames.removeAt(slot);
+			effectMainValues.removeAt(slot);
 			"ClipChannel[%]: Removed effect at slot %".format(channelIndex, slot).postln;
 		});
 	}
@@ -275,13 +296,48 @@ ClipChannel {
 		var running = effects[slot];
 		if (running.notNil, {
 			running.set(param, value);
+
+			// If this is the main control, track it
+			var effectName = effectNames[slot];
+			if (effectName.notNil, {
+				var mainParam = ClipEffectRegistry.getMainControl(effectName);
+				if (param == mainParam, {
+					effectMainValues[slot] = value;
+				});
+			});
 		}, {
 			"ClipChannel[%]: No effect at slot % to set % on".format(channelIndex, slot, param).warn;
 		});
 	}
 
+	// NEW: Set effect's main control (for MIDI knob)
+	setEffectMainControl { |slot, value|
+		var effectName = effectNames[slot];
+		if (effectName.isNil, {
+			"ClipChannel[%]: No effect at slot %".format(channelIndex, slot).warn;
+			^this;
+		});
+
+		var mainParam = ClipEffectRegistry.getMainControl(effectName);
+		if (mainParam.isNil, {
+			"ClipChannel[%]: Effect % has no main control".format(
+				channelIndex, effectName).warn;
+			^this;
+		});
+
+		this.setEffectParam(slot, mainParam, value);
+	}
+
 	getEffect { |slot|
 		^effects[slot];
+	}
+
+	getEffectName { |slot|
+		^effectNames[slot];
+	}
+
+	getEffectMainValue { |slot|
+		^effectMainValues[slot];
 	}
 
 	// Callback when a slot changes state (for LED updates, etc.)

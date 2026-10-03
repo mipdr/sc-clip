@@ -88,6 +88,24 @@ ClipMIDIController {
 		this.mapEffectParam(ccNum, channelIndex, slot, param, lo, hi);
 	}
 
+	// Map a knob to effect's main control parameter (auto-detects range from ClipEffectRegistry)
+	// This is the recommended way to map MIDI knobs to effects with the new effect selection system
+	mapKnobToEffectMainControl { |ccNum, channelIndex, slot|
+		this.mapCC(ccNum, { |val|
+			var channel = clip.grid.getChannel(channelIndex);
+			if (channel.notNil, {
+				var effectName = channel.getEffectName(slot);
+				if (effectName.notNil, {
+					var spec = ClipEffectRegistry.getMainControlSpec(effectName);
+					if (spec.notNil, {
+						var mapped = spec.map(val / 127.0);
+						channel.setEffectMainControl(slot, mapped);
+					});
+				});
+			});
+		});
+	}
+
 	// Map a CC to channel pan
 	mapChannelPan { |ccNum, channelIndex|
 		this.mapCC(ccNum, { |val|
