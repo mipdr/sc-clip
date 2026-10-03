@@ -70,14 +70,14 @@ ClipTR8s4Channel : ClipMIDIController {
 		);
 
 		// Default knob-to-effect mapping
-		// Maps knobs to effect slots and parameters (if effects exist)
+		// Maps knobs to effect slots' main control parameters (defined per-effect in ClipEffectRegistry)
 		knobMapping = [
-			// CTRL knob -> Effect slot 0, \mix parameter
-			(knob: \ctrl, slot: 0, param: \mix, range: [0.0, 1.0]),
-			// DECAY knob -> Effect slot 1, \mix parameter
-			(knob: \decay, slot: 1, param: \mix, range: [0.0, 1.0]),
-			// TUNE knob -> Effect slot 2, \mix parameter
-			(knob: \tune, slot: 2, param: \mix, range: [0.0, 1.0])
+			// CTRL knob -> Effect slot 0 main control
+			(knob: \ctrl, slot: 0),
+			// DECAY knob -> Effect slot 1 main control
+			(knob: \decay, slot: 1),
+			// TUNE knob -> Effect slot 2 main control
+			(knob: \tune, slot: 2)
 		];
 
 		"ClipTR8s4Channel: Initialized".postln;
@@ -99,23 +99,14 @@ ClipTR8s4Channel : ClipMIDIController {
 			// Map fader to channel level
 			this.mapFader(cc[\level], chanIdx, -60, 6);
 
-			// Map knobs to effect parameters (only if effects exist)
+			// Map knobs to effect main control parameters
 			knobMapping.do { |mapping|
 				var knobName = mapping[\knob];
 				var slot = mapping[\slot];
-				var param = mapping[\param];
-				var range = mapping[\range];
 				var knobCC = cc[knobName];
 
 				if (knobCC.notNil, {
-					this.mapKnob(
-						knobCC,
-						chanIdx,
-						slot,
-						param,
-						range[0],
-						range[1]
-					);
+					this.mapKnobToEffectMainControl(knobCC, chanIdx, slot);
 				});
 			};
 		};
@@ -149,8 +140,8 @@ ClipTR8s4Channel : ClipMIDIController {
 		"    RC (Ride)       -> Channel %".format(channelAssignment[\rc]).postln;
 		"  Knob mappings: % configured".format(knobMapping.size).postln;
 		knobMapping.do { |mapping|
-			"    % knob -> effect slot %, param %".format(
-				mapping[\knob], mapping[\slot], mapping[\param]
+			"    % knob -> effect slot % main control".format(
+				mapping[\knob], mapping[\slot]
 			).postln;
 		};
 	}
