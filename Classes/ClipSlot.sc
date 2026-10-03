@@ -18,6 +18,7 @@ ClipSlot {
 	var <channel;  // Parent ClipChannel
 	var <slotIndex;
 	var <server;
+	var nudgeShift = 0;  // Beats of channel nudge in loopStartBeat (declared last: newCopyArgs fills vars in order)
 
 	*new { |channel, slotIndex|
 		^super.newCopyArgs(
@@ -115,6 +116,7 @@ ClipSlot {
 		// Playback follows straight on from recording, so the recording's
 		// start is the loop's phase from here on
 		loopStartBeat = atBeat;
+		nudgeShift = 0;
 
 		// Schedule recording to start at the specified beat
 		channel.transport.scheduleAtBeat(atBeat, {
@@ -193,7 +195,7 @@ ClipSlot {
 			.format(channel.channelIndex, slotIndex)
 			.postln;
 
-		this.startPlayback;
+		this.startNudged(loopStartBeat + loopLengthBeats);
 	}
 
 	// Start playback (called by transport at quantized time)
@@ -213,6 +215,7 @@ ClipSlot {
 		// player, orphaning the first (it keeps looping, untracked, after stop).
 		this.setState(\queuedToPlay);
 		loopStartBeat = atBeat;
+		nudgeShift = 0;
 
 		ClipDebugLogger.logSchedule(
 			\startPlayback,
@@ -223,8 +226,39 @@ ClipSlot {
 		);
 		channel.transport.scheduleAtBeat(atBeat, {
 			// Skip if the slot was cleared/changed while queued
-			if (state == \queuedToPlay, { this.startPlayback });
+			if (state == \queuedToPlay, { this.startNudged(atBeat) });
 		});
+	}
+
+	// Internal: start a loop whose un-nudged start is atBeat (called at
+	// atBeat), shifted by the channel's nudge: a later nudge delays the
+	// start, an earlier one starts that far into the loop
+	startNudged { |atBeat|
+		var shift = channel.nudgeMs / 1000 * channel.transport.clock.tempo;  // clock.tempo is beats per second
+		var delay = shift.max(0) % loopLengthBeats;
+		var phase = shift.neg.max(0) % loopLengthBeats;
+
+		loopStartBeat = atBeat + delay - phase;
+		nudgeShift = delay - phase;
+
+		if (delay > 0, {
+			if (state != \queuedToPlay, { this.setState(\queuedToPlay) });
+			channel.transport.scheduleAtBeat(atBeat + delay, {
+				// Skip if the slot was stopped/cleared while waiting
+				if (state == \queuedToPlay, { this.startPlayback(this.phaseToFrame(phase)) });
+			});
+		}, {
+			this.startPlayback(this.phaseToFrame(phase));
+		});
+	}
+
+	// Where the loop sits on the beat grid: loopStartBeat without the
+	// channel nudge applied to it (what launch quantization aligns to --
+	// otherwise a clip launched against a nudged one got the nudge twice)
+	gridStartBeat { ^loopStartBeat - nudgeShift }
+
+	phaseToFrame { |phase|
+		^(phase / loopLengthBeats * loopLengthSamples).round.asInteger
 	}
 
 	// Cancel a queued play before it starts (its scheduled start checks state)
@@ -232,8 +266,36 @@ ClipSlot {
 		if (state == \queuedToPlay, { this.setState(\stopped) });
 	}
 
-	// Internal: actually start the playback synth
-	startPlayback {
+	// Internal: move a playing loop by ms milliseconds after its channel's
+	// nudge changed -- its phase (loopStartBeat) shifts and the player
+	// restarts at the matching point
+	shiftPlaying { |ms|
+		var phase, startPos;
+
+		// clock.tempo is beats per second
+		loopStartBeat = loopStartBeat + (ms / 1000 * channel.transport.clock.tempo);
+		nudgeShift = nudgeShift + (ms / 1000 * channel.transport.clock.tempo);
+		phase = (channel.transport.beat - loopStartBeat) % loopLengthBeats;
+		startPos = this.phaseToFrame(phase);
+
+		// Same latency as quantized launches, so the new player lands on the
+		// same timeline; the old player's release crossfades into it
+		server.makeBundle(server.latency, {
+			ClipDebugLogger.logSynthFree(
+				\clipPlayer,
+				channel.channelIndex,
+				slotIndex,
+				playerSynth,
+				"nudge restart"
+			);
+			playerSynth.set(\gate, 0);
+			playerSynth = nil;
+			this.startPlayback(startPos);
+		});
+	}
+
+	// Internal: actually start the playback synth, startPos frames into the loop
+	startPlayback { |startPos = 0|
 		var outputBus = channel.mixerChannel.inbus;  // ddwMixerChannel input bus
 		var args;
 
@@ -274,7 +336,8 @@ ClipSlot {
 			\rate, 1,
 			\loop, 1,
 			\gate, 1,
-			\amp, 1
+			\amp, 1,
+			\startPos, startPos
 		];
 
 		// Create player synth in the looper group

@@ -134,8 +134,8 @@ ClipTransport {
 		);
 	}
 
-	// Next beat at which the longest running clip starts its loop again,
-	// or nil if no clip is running. Queued-to-play clips count (at their
+	// Next beat at which the longest running clip starts its loop again on
+	// the beat grid (ignoring its channel nudge), or nil if no clip is running. Queued-to-play clips count (at their
 	// scheduled start) so a scene of clips launched together stays aligned;
 	// queued-to-stop clips don't, since they're on their way out.
 	nextLongestClipStart {
@@ -151,8 +151,8 @@ ClipTransport {
 		if (running.isEmpty, { ^nil });
 
 		longest = running.maxItem(_.loopLengthBeats);
-		cycles = ((clock.beats - longest.loopStartBeat) / longest.loopLengthBeats).ceil;
-		^longest.loopStartBeat + (cycles * longest.loopLengthBeats);
+		cycles = ((clock.beats - longest.gridStartBeat) / longest.loopLengthBeats).ceil;
+		^longest.gridStartBeat + (cycles * longest.loopLengthBeats);
 	}
 
 	// Schedule a function at a specific beat (absolute time)
@@ -223,6 +223,10 @@ ClipTransport {
 
 		midiClockTask = Routine({
 			loop {
+				// Same latency as audio bundles and MIDI clip notes, so gear
+				// following this clock plays in time with them (set per pulse
+				// to follow later server.latency changes)
+				midiClockOut.latency = server.latency;
 				midiClockOut.midiClock;
 				(1/24).wait;  // 24 clock pulses per quarter note
 			};
@@ -278,12 +282,16 @@ ClipTransport {
 				var beatInBar = currentBeat % beatsPerBar;
 				var isDownbeat = (beatInBar < 0.01);  // First beat of bar
 
-				// Play click synth
-				Synth(\metronomeClick, [
-					\out, 0,
-					\isDownbeat, isDownbeat.asInteger,
-					\amp, metronomeAmp
-				]);
+				// Play click synth, with the same latency as clip launches and
+				// MIDI (clock and clips) -- sent straight away, it sounded
+				// server.latency ahead of everything else
+				server.makeBundle(server.latency, {
+					Synth(\metronomeClick, [
+						\out, 0,
+						\isDownbeat, isDownbeat.asInteger,
+						\amp, metronomeAmp
+					], server);
+				});
 
 				1.wait;  // Every beat
 			};

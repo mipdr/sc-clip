@@ -42,9 +42,9 @@ Audio buffers are exported as 32-bit float WAV files, preserving the exact sampl
 ### Saving a Session
 
 ```supercollider
-// Save to a new location
+// Save under a name
 clip.saveAs(
-    path: "/path/to/MySong",
+    name: "MySong",
     action: {
         "Session saved!".postln;
     }
@@ -52,7 +52,7 @@ clip.saveAs(
 ```
 
 **Parameters:**
-- `path`: Directory path where the session will be saved (created if it doesn't exist)
+- `name`: Session name. The session is saved to `Platform.userAppSupportDir +/+ "SC-Clip/<name>"` (created if it doesn't exist)
 - `action`: Optional callback function executed when save is complete
 
 ### Loading a Session
@@ -60,7 +60,7 @@ clip.saveAs(
 ```supercollider
 // Load a saved session (class method)
 ~clip = SCClip.load(
-    path: "/path/to/MySong",
+    name: "MySong",
     server: Server.default,
     action: {
         "Session loaded!".postln;
@@ -70,7 +70,7 @@ clip.saveAs(
 ```
 
 **Parameters:**
-- `path`: Directory path containing the saved session
+- `name`: Name the session was saved under with `saveAs`
 - `server`: The server to use (defaults to `Server.default`)
 - `action`: Optional callback function executed when load is complete
 
@@ -97,6 +97,7 @@ clip.saveAs(
 - Pan position (-1 to 1)
 - Mute state
 - Solo state
+- Nudge offset in ms (from `nudgeChannel`), shared by all the channel's clips
 
 ### Clip Slots
 - Audio buffer content (.wav files)
@@ -123,7 +124,7 @@ clip.saveAs(
 
     // After recording, save the session
     ~clip.saveAs(
-        path: Platform.userAppSupportDir +/+ "SC-Clip/MySong",
+        name: "MySong",
         action: { "Saved!".postln; }
     );
 });
@@ -132,7 +133,7 @@ clip.saveAs(
 ~clip.shutdown;  // Clean up current session first
 
 ~clip = SCClip.load(
-    path: Platform.userAppSupportDir +/+ "SC-Clip/MySong",
+    name: "MySong",
     action: {
         "Loaded!".postln;
 
@@ -151,11 +152,11 @@ Both save and load operations are asynchronous because they involve disk I/O and
 
 ```supercollider
 // ❌ Wrong - save might not be complete yet
-~clip.saveAs("/path/to/session");
+~clip.saveAs("MySong");
 "Saved!".postln;  // This runs immediately, before save is done
 
 // ✅ Correct - use callback
-~clip.saveAs("/path/to/session", action: {
+~clip.saveAs("MySong", action: {
     "Saved!".postln;  // This runs after save completes
 });
 ```
@@ -166,7 +167,7 @@ When loading a session, ensure the server is in a clean state. If you have a run
 
 ```supercollider
 ~clip.shutdown;  // Cleans up current session
-~clip = SCClip.load("/path/to/session");
+~clip = SCClip.load("MySong");
 ```
 
 ### Slot States
@@ -174,23 +175,18 @@ When loading a session, ensure the server is in a clean state. If you have a run
 Loaded clips default to the `\stopped` state, even if they were playing when the session was saved. This prevents unexpected audio playback on load. Launch clips manually after loading:
 
 ```supercollider
-~clip = SCClip.load("/path", action: {
+~clip = SCClip.load("MySong", action: {
     // Manually launch clips you want to play
     ~clip.launchSlot(0, 0);
     ~clip.launchSlot(1, 2);
 });
 ```
 
-### Path Management
+### Session Location
 
-Use `Platform.userAppSupportDir` for portable session storage:
-
-```supercollider
-// Platform-independent path
-var sessionDir = Platform.userAppSupportDir +/+ "SC-Clip/MySessions";
-
-~clip.saveAs(sessionDir +/+ "MySong");
-```
+Sessions are stored by name under `Platform.userAppSupportDir +/+ "SC-Clip"`
+(e.g. `~/.local/share/SuperCollider/SC-Clip/MySong` on Linux). Use
+`SCClip.sessionPath("MySong")` to get a session's directory.
 
 ### Not Saved
 
