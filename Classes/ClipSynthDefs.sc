@@ -16,6 +16,7 @@ ClipSynthDefs {
 			this.addChannelEffects;
 			this.addMetronome;
 			this.addLevelMeter;
+			this.registerDefaultEffects;
 		};
 	}
 
@@ -264,10 +265,12 @@ ClipSynthDefs {
 
 		// Distortion via tanh waveshaping. drive 0-1 scales into saturation;
 		// mix blends against the dry signal like the others.
-		SynthDef(\channelDistortion, { |out, mix = 0.3, drive = 0.5|
+		// Main control: drive (amount of distortion)
+		SynthDef(\channelDistortion, { |out, mix = 1.0, drive = 0.5|
 			var sig = In.ar(out, 1);
-			var driven = (sig * (1 + (drive * 20))).tanh;
-			ReplaceOut.ar(out, (sig * (1 - mix)) + (driven * mix));
+			var dry = sig;
+			var driven = (sig * (1 + (drive * 10))).tanh * 0.5;
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (driven * mix));
 		}).add;
 
 		// Boum effect (mono/channel version): compressor + distortion + hi-cut + gate
@@ -335,6 +338,318 @@ ClipSynthDefs {
 			ReplaceOut.ar(out, sig);
 		}).add;
 
+		// NEW EFFECTS (added for flexible effect selection)
+
+		// Tape Delay: Variable-speed delay with modulation
+		// Main control: mix (dry/wet balance)
+		SynthDef(\channelTapeDelay, { |out, mix=0.3, delayTime=0.375, feedback=0.6, wobble=0.002|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var modFreq = LFNoise1.kr(0.2).range(0.001, wobble);
+			var delayTimeMod = delayTime * (1 + SinOsc.kr(1.3, 0, modFreq));
+			var delayed = LocalIn.ar(1);
+			delayed = DelayC.ar(sig + (delayed * feedback), 2, delayTimeMod.clip(0.001, 1.999));
+			delayed = LPF.ar(delayed, 8000);  // Tape-like filtering
+			LocalOut.ar(delayed);
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (delayed * mix));
+		}).add;
+
+		// Hard Clip: Aggressive hard clipping distortion
+		// Main control: drive (clipping threshold)
+		SynthDef(\channelHardClip, { |out, mix=1.0, drive=0.5, bias=0|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var driven = (sig * (1 + (drive * 10)) + bias).clip2(0.8) * 0.8;
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (driven * mix));
+		}).add;
+
+		// Chorus: Modulated delay for thickening
+		// Main control: depth (modulation intensity)
+		SynthDef(\channelChorus, { |out, mix=0.5, rate=0.5, depth=0.01, voices=4|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var wet = Mix.fill(voices, { |i|
+				var phase = (i / voices) * 2pi;
+				var mod = SinOsc.kr(rate, phase).range(0.02, 0.02 + depth);
+				DelayC.ar(sig, 0.1, mod);
+			}) / voices;
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (wet * mix));
+		}).add;
+
+		// Phaser: Allpass filter modulation
+		// Main control: depth (sweep intensity)
+		SynthDef(\channelPhaser, { |out, mix=0.5, rate=0.3, depth=0.5, stages=4|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var mod = SinOsc.kr(rate).range(0.0001, 0.01 * depth);
+			var wet = sig;
+			stages.do {
+				wet = AllpassN.ar(wet, 0.02, mod);
+			};
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (wet * mix));
+		}).add;
+
+		// Flanger: Short modulated delay
+		// Main control: depth (sweep range)
+		SynthDef(\channelFlanger, { |out, mix=0.5, rate=0.2, depth=0.005, feedback=0.5|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var mod = SinOsc.kr(rate).range(0.001, 0.001 + depth);
+			var delayed = LocalIn.ar(1);
+			delayed = DelayC.ar(sig + (delayed * feedback), 0.02, mod);
+			LocalOut.ar(delayed);
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (delayed * mix));
+		}).add;
+
+		// Low-Pass Filter: Resonant low-pass filter
+		// Main control: freq (cutoff frequency)
+		SynthDef(\channelLowPass, { |out, freq=1000, resonance=0.5, mix=1.0|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var wet = RLPF.ar(sig, freq.clip(20, 20000), 1 - (resonance * 0.9));
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (wet * mix));
+		}).add;
+
+		// High-Pass Filter: Resonant high-pass filter
+		// Main control: freq (cutoff frequency)
+		SynthDef(\channelHighPass, { |out, freq=200, resonance=0.5, mix=1.0|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var wet = RHPF.ar(sig, freq.clip(20, 20000), 1 - (resonance * 0.9));
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (wet * mix));
+		}).add;
+
+		// Band-Pass Filter: Resonant band-pass filter
+		// Main control: freq (center frequency)
+		SynthDef(\channelBandPass, { |out, freq=1000, resonance=0.5, mix=1.0|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var wet = BPF.ar(sig, freq.clip(20, 20000), 1 - (resonance * 0.9));
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (wet * mix));
+		}).add;
+
+		// Simple Compressor: Basic Compander
+		// Main control: thresh (compression threshold)
+		SynthDef(\channelCompressor, { |out, thresh= -12, ratio=3, attack=0.01, release=0.3, mix=1.0|
+			var sig = In.ar(out, 1);
+			var dry = sig;
+			var wet = Compander.ar(sig, sig,
+				thresh.dbamp, 1, 1/ratio, attack, release);
+			ReplaceOut.ar(out, (dry * (1 - mix)) + (wet * mix));
+		}).add;
+
+		// Optionally check for sc3-plugins and add GVerb if available
+		if (GVerb.respondsTo(\ar), {
+			SynthDef(\channelGVerb, { |out, mix=0.3, roomsize=10, revtime=3,
+				damping=0.5, spread=15|
+				var sig = In.ar(out, 1);
+				var dry = sig;
+				var wet = GVerb.ar(sig, roomsize, revtime, damping,
+					spread: spread, drylevel: 0, mul: 0.3);
+				wet = wet[0] + wet[1] * 0.5;  // Mix stereo to mono
+				ReplaceOut.ar(out, (dry * (1 - mix)) + (wet * mix));
+			}).add;
+		});
+
+	}
+
+	*registerDefaultEffects {
+		// Register all default channel effects with metadata
+		// Called during StartUp after SynthDefs are added
+
+		// Bypass (null effect)
+		ClipEffectRegistry.register(\bypass, (
+			displayName: "Bypass",
+			category: \utility,
+			mainControl: nil,
+			parameters: Dictionary.new
+		));
+
+		// Reverb: FreeVerb
+		ClipEffectRegistry.register(\channelReverb, (
+			displayName: "Reverb (FreeVerb)",
+			category: \reverb,
+			mainControl: \mix,
+			parameters: (
+				mix: ControlSpec(0, 1, \lin, 0.01, 0.3, ""),
+				room: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				damp: ControlSpec(0, 1, \lin, 0.01, 0.5, "")
+			)
+		));
+
+		// Reverb: GVerb (if available)
+		if (GVerb.respondsTo(\ar), {
+			ClipEffectRegistry.register(\channelGVerb, (
+				displayName: "Reverb (GVerb)",
+				category: \reverb,
+				mainControl: \mix,
+				parameters: (
+					mix: ControlSpec(0, 1, \lin, 0.01, 0.3, ""),
+					roomsize: ControlSpec(1, 300, \exp, 1, 10, "m"),
+					revtime: ControlSpec(0.1, 20, \exp, 0.1, 3, "s"),
+					damping: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+					spread: ControlSpec(0, 50, \lin, 1, 15, "")
+				)
+			));
+		});
+
+		// Delay: Simple Delay
+		ClipEffectRegistry.register(\channelDelay, (
+			displayName: "Delay (Comb)",
+			category: \delay,
+			mainControl: \mix,
+			parameters: (
+				mix: ControlSpec(0, 1, \lin, 0.01, 0.3, ""),
+				delayTime: ControlSpec(0.01, 2, \exp, 0.01, 0.3, "s"),
+				decayTime: ControlSpec(0.1, 10, \exp, 0.1, 2, "s")
+			)
+		));
+
+		// Delay: Tape Delay
+		ClipEffectRegistry.register(\channelTapeDelay, (
+			displayName: "Delay (Tape)",
+			category: \delay,
+			mainControl: \mix,
+			parameters: (
+				mix: ControlSpec(0, 1, \lin, 0.01, 0.3, ""),
+				delayTime: ControlSpec(0.01, 2, \exp, 0.01, 0.375, "s"),
+				feedback: ControlSpec(0, 0.95, \lin, 0.01, 0.6, ""),
+				wobble: ControlSpec(0, 0.01, \lin, 0.0001, 0.002, "")
+			)
+		));
+
+		// Distortion: Soft
+		ClipEffectRegistry.register(\channelDistortion, (
+			displayName: "Distortion (Soft)",
+			category: \distortion,
+			mainControl: \drive,
+			parameters: (
+				mix: ControlSpec(0, 1, \lin, 0.01, 1.0, ""),
+				drive: ControlSpec(0, 1, \lin, 0.01, 0.5, "")
+			)
+		));
+
+		// Distortion: Hard Clip
+		ClipEffectRegistry.register(\channelHardClip, (
+			displayName: "Distortion (Hard)",
+			category: \distortion,
+			mainControl: \drive,
+			parameters: (
+				mix: ControlSpec(0, 1, \lin, 0.01, 1.0, ""),
+				drive: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				bias: ControlSpec(-0.5, 0.5, \lin, 0.01, 0, "")
+			)
+		));
+
+		// Modulation: Chorus
+		ClipEffectRegistry.register(\channelChorus, (
+			displayName: "Chorus",
+			category: \modulation,
+			mainControl: \depth,
+			parameters: (
+				mix: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				rate: ControlSpec(0.1, 5, \exp, 0.01, 0.5, "Hz"),
+				depth: ControlSpec(0.001, 0.05, \exp, 0.001, 0.01, ""),
+				voices: ControlSpec(2, 8, \lin, 1, 4, "")
+			)
+		));
+
+		// Modulation: Phaser
+		ClipEffectRegistry.register(\channelPhaser, (
+			displayName: "Phaser",
+			category: \modulation,
+			mainControl: \depth,
+			parameters: (
+				mix: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				rate: ControlSpec(0.1, 5, \exp, 0.01, 0.3, "Hz"),
+				depth: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				stages: ControlSpec(2, 12, \lin, 1, 4, "")
+			)
+		));
+
+		// Modulation: Flanger
+		ClipEffectRegistry.register(\channelFlanger, (
+			displayName: "Flanger",
+			category: \modulation,
+			mainControl: \depth,
+			parameters: (
+				mix: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				rate: ControlSpec(0.1, 5, \exp, 0.01, 0.2, "Hz"),
+				depth: ControlSpec(0.001, 0.01, \exp, 0.0001, 0.005, ""),
+				feedback: ControlSpec(0, 0.95, \lin, 0.01, 0.5, "")
+			)
+		));
+
+		// Filter: Low-Pass
+		ClipEffectRegistry.register(\channelLowPass, (
+			displayName: "Filter (Low-Pass)",
+			category: \filter,
+			mainControl: \freq,
+			parameters: (
+				freq: ControlSpec(20, 20000, \exp, 1, 1000, "Hz"),
+				resonance: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				mix: ControlSpec(0, 1, \lin, 0.01, 1.0, "")
+			)
+		));
+
+		// Filter: High-Pass
+		ClipEffectRegistry.register(\channelHighPass, (
+			displayName: "Filter (High-Pass)",
+			category: \filter,
+			mainControl: \freq,
+			parameters: (
+				freq: ControlSpec(20, 20000, \exp, 1, 200, "Hz"),
+				resonance: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				mix: ControlSpec(0, 1, \lin, 0.01, 1.0, "")
+			)
+		));
+
+		// Filter: Band-Pass
+		ClipEffectRegistry.register(\channelBandPass, (
+			displayName: "Filter (Band-Pass)",
+			category: \filter,
+			mainControl: \freq,
+			parameters: (
+				freq: ControlSpec(20, 20000, \exp, 1, 1000, "Hz"),
+				resonance: ControlSpec(0, 1, \lin, 0.01, 0.5, ""),
+				mix: ControlSpec(0, 1, \lin, 0.01, 1.0, "")
+			)
+		));
+
+		// Dynamics: Boum
+		ClipEffectRegistry.register(\channelBoum, (
+			displayName: "Compressor (Boum)",
+			category: \dynamics,
+			mainControl: \thresh,
+			parameters: (
+				thresh: ControlSpec(-60, 0, \lin, 0.1, -12, "dB"),
+				ratio: ControlSpec(1, 20, \lin, 0.1, 3, ":1"),
+				attack: ControlSpec(0.001, 0.1, \exp, 0.001, 0.01, "s"),
+				release: ControlSpec(0.01, 2, \exp, 0.01, 0.3, "s"),
+				drive: ControlSpec(0, 24, \lin, 0.1, 0, "dB"),
+				type: ControlSpec(0, 3, \lin, 1, 0, ""),
+				hicut: ControlSpec(200, 20000, \exp, 1, 20000, "Hz"),
+				gateThresh: ControlSpec(-80, -20, \lin, 0.1, -60, "dB"),
+				makeupGain: ControlSpec(0, 24, \lin, 0.1, 0, "dB"),
+				mix: ControlSpec(0, 1, \lin, 0.01, 1, "")
+			)
+		));
+
+		// Dynamics: Simple Compressor
+		ClipEffectRegistry.register(\channelCompressor, (
+			displayName: "Compressor (Simple)",
+			category: \dynamics,
+			mainControl: \thresh,
+			parameters: (
+				thresh: ControlSpec(-60, 0, \lin, 0.1, -12, "dB"),
+				ratio: ControlSpec(1, 20, \lin, 0.1, 3, ":1"),
+				attack: ControlSpec(0.001, 0.1, \exp, 0.001, 0.01, "s"),
+				release: ControlSpec(0.01, 2, \exp, 0.01, 0.3, "s"),
+				mix: ControlSpec(0, 1, \lin, 0.01, 1.0, "")
+			)
+		));
+
+		"ClipEffectRegistry: % effects registered".format(ClipEffectRegistry.all.size).postln;
 	}
 
 	// Level meter tap, played by ClipLevelMeter at the tail of a MixerChannel's
