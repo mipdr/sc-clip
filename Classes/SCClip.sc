@@ -209,6 +209,14 @@ SCClip {
 		grid.addChannelEffect(channelIndex, synthDef, args, slot);
 	}
 
+	setChannelInput { |channelIndex, inputIndex|
+		grid.setChannelInput(channelIndex, inputIndex);
+	}
+
+	getChannelInput { |channelIndex|
+		^grid.getChannelInput(channelIndex);
+	}
+
 	// Master controls
 	setMasterLevel { |db|
 		masterBus.setMasterLevel(db);
@@ -341,8 +349,8 @@ SCClip {
 			controller = ClipLaunchpadMini.new(
 				grid,
 				transport,
-				numRows ? 4,   // Default 4 rows for clips
-				numCols ? 8    // Default 8 columns (channels)
+				numRows ? 6,   // Default 6 clip slots (rows 0-5)
+				numCols ? 6    // Default 6 channels (cols 0-3 audio, 4-5 MIDI)
 			);
 			// connect returns nil on failure (e.g. device not found) -- capture
 			// that here so connectController correctly reports failure too,
@@ -528,6 +536,7 @@ SCClip {
 					\nudgeMs -> channel.nudgeMs,
 					\isMuted -> channel.mixerChannel.muted,
 					\isSoloed -> channel.isSoloed,
+					\hardwareInputIndex -> channel.hardwareInputIndex,  // Save input mapping
 					\slots -> channel.slots.collect { |slot, slotIdx|
 						if (slot.hasAudio, {
 							Dictionary[
@@ -760,6 +769,11 @@ SCClip {
 			}, {
 				channel.setLevel(channelData[\level].ampdb);
 				channel.setPan(channelData[\pan]);
+
+				// Restore input mapping if saved
+				if (channelData[\hardwareInputIndex].notNil, {
+					channel.setHardwareInput(channelData[\hardwareInputIndex]);
+				});
 			});
 
 			channel.nudgeMs = channelData[\nudgeMs] ? 0;  // Absent in sessions saved before nudging existed
