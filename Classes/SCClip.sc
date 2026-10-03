@@ -222,6 +222,14 @@ SCClip {
 		masterBus.setCompressor(thresh, ratio, attack, release, makeupGain);
 	}
 
+	setMasterBoum { |thresh, ratio, attack, release, scHPF, drive, type, hicut, gateThresh, makeupGain, mix, bypass|
+		masterBus.setBoum(thresh, ratio, attack, release, scHPF, drive, type, hicut, gateThresh, makeupGain, mix, bypass);
+	}
+
+	setMasterCompressorType { |type|
+		masterBus.setCompressorType(type);
+	}
+
 	setMasterLimiter { |ceiling, dur|
 		masterBus.setLimiter(ceiling, dur);
 	}
@@ -458,14 +466,33 @@ SCClip {
 			];
 		});
 
-		// Master compressor settings (if active)
+		// Master compressor type and settings (if active)
 		if (masterBus.compSynth.notNil, {
+			data[\compressorType] = masterBus.compressorType;
+
+			// Glue Compressor settings
 			data[\masterComp] = Dictionary[
 				\thresh -> -12,
 				\ratio -> 3,
 				\attack -> 0.01,
 				\release -> 0.3,
 				\makeupGain -> 0
+			];
+
+			// Boum settings
+			data[\masterBoum] = Dictionary[
+				\thresh -> -12,
+				\ratio -> 3,
+				\attack -> 0.01,
+				\release -> 0.3,
+				\scHPF -> 0,
+				\drive -> 0,
+				\type -> 0,
+				\hicut -> 20000,
+				\gateThresh -> -60,
+				\makeupGain -> 0,
+				\mix -> 1,
+				\bypass -> 0
 			];
 		});
 
@@ -665,12 +692,29 @@ SCClip {
 			);
 		});
 
+		// Restore compressor type first
+		if (sessionData[\compressorType].notNil, {
+			this.setMasterCompressorType(sessionData[\compressorType]);
+		});
+
+		// Restore compressor settings based on type
 		if (sessionData[\masterComp].notNil, {
 			var comp = sessionData[\masterComp];
 			this.setMasterCompressor(
 				comp[\thresh], comp[\ratio],
 				comp[\attack], comp[\release],
 				comp[\makeupGain]
+			);
+		});
+
+		if (sessionData[\masterBoum].notNil, {
+			var boum = sessionData[\masterBoum];
+			this.setMasterBoum(
+				boum[\thresh], boum[\ratio],
+				boum[\attack], boum[\release],
+				boum[\scHPF], boum[\drive], boum[\type],
+				boum[\hicut], boum[\gateThresh],
+				boum[\makeupGain], boum[\mix], boum[\bypass]
 			);
 		});
 
