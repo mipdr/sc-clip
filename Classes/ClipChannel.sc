@@ -20,6 +20,7 @@ ClipChannel {
 	                // cross-channel silencing is done by ClipGrid:soloChannel/unSoloChannel
 	var <hardwareInputIndex;  // Which hardware input this channel reads from (nil = no input)
 	var <>slotStateAction;  // Optional callback { |slotIndex, newState| } (e.g. grid controller LEDs)
+	var <>nudgeMs = 0;  // Timing offset in ms (positive = later) for all this channel's slots (declared last: newCopyArgs fills vars in order)
 
 	*new { |channelIndex, numSlots = 8, transport, masterChannel, server, hardwareInputIndex|
 		^super.newCopyArgs(
@@ -146,6 +147,17 @@ ClipChannel {
 				"ClipChannel[%]: Slot % not playing (%)".format(channelIndex, slotIndex, slot.state).warn;
 			};
 		});
+	}
+
+	// Shift the channel in time by ms milliseconds (positive = later,
+	// negative = earlier). Nudges accumulate in nudgeMs, which every slot
+	// applies whenever it starts playing; playing slots move right away.
+	nudge { |ms|
+		nudgeMs = nudgeMs + ms;
+		"%[%]: Nudged % ms (total % ms)".format(this.class.name, channelIndex, ms, nudgeMs).postln;
+		slots.do { |slot|
+			if (slot.isPlaying, { slot.shiftPlaying(ms) });
+		};
 	}
 
 	// Stop all playing slots in this channel

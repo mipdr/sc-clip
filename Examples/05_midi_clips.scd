@@ -201,12 +201,12 @@ s.waitForBoot {
 // ===================================
 // MIDI clips and the channel layout are stored in the session's
 // session.scd (no audio files for them).
-~clip.saveAs(Platform.userAppSupportDir +/+ "SC-Clip" +/+ "midi-example");
+~clip.saveAs("midi-example");
 
 // Load it back (needs the MIDIOut again, since MIDI channels play through it)
 (
 ~clip.shutdown;
-~clip = SCClip.load(Platform.userAppSupportDir +/+ "SC-Clip" +/+ "midi-example", s,
+~clip = SCClip.load("midi-example", s,
 	action: { |clip| clip.printStatus },
 	midiOut: ~midiOut
 );

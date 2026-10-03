@@ -49,7 +49,7 @@ clip.boot(action: {
 
 		// Save session to disk
 		clip.saveAs(
-			path: Platform.userAppSupportDir +/+ "SC-Clip/TestSession",
+			name: "TestSession",
 			action: {
 				"=== Session saved! ===".postln;
 				"You can now run the 'Load Session' section below to test loading.".postln;
@@ -65,9 +65,7 @@ clip.boot(action: {
 // ===== Load Session =====
 
 (
-var sessionPath = Platform.userAppSupportDir +/+ "SC-Clip/TestSession";
-
-"=== Loading session from % ===".format(sessionPath).postln;
+"=== Loading session TestSession ===".postln;
 
 // Shutdown any existing session first
 if (~clip.notNil, {
@@ -76,7 +74,7 @@ if (~clip.notNil, {
 
 // Load the saved session
 ~clip = SCClip.load(
-	path: sessionPath,
+	name: "TestSession",
 	server: Server.default,
 	action: {
 		"=== Session loaded successfully! ===".postln;

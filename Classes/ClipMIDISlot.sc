@@ -24,6 +24,7 @@ ClipMIDISlot {
 	var <activeNotes;  // IdentitySet of notes held down during recording
 	var <soundingNotes;  // IdentitySet of notes this slot has sent a note-on for (and no note-off yet)
 	var noteOnFunc, noteOffFunc;  // Recording responders, only alive while \recording
+	var nudgeShift = 0;  // Beats of channel nudge in loopStartBeat (declared last: newCopyArgs fills vars in order)
 
 	*new { |channel, slotIndex|
 		^super.newCopyArgs(
@@ -70,6 +71,7 @@ ClipMIDISlot {
 
 		loopStartBeat = atBeat;
 		recordStartBeat = atBeat;
+		nudgeShift = 0;
 
 		channel.transport.scheduleAtBeat(atBeat, {
 			// Skip if the slot was cleared (or recording already started
@@ -156,7 +158,7 @@ ClipMIDISlot {
 			.format(channel.channelIndex, slotIndex, midiEvents.size)
 			.postln;
 
-		this.startPlayback;
+		this.startNudged(loopStartBeat + loopLengthBeats);
 	}
 
 	// Start playback (called by transport at quantized time)
@@ -169,20 +171,62 @@ ClipMIDISlot {
 		// Leave \stopped right away to prevent double-launching
 		this.setState(\queuedToPlay);
 		loopStartBeat = atBeat;
+		nudgeShift = 0;
 
 		channel.transport.scheduleAtBeat(atBeat, {
 			// Skip if the slot was cleared/changed while queued
-			if (state == \queuedToPlay, { this.startPlayback });
+			if (state == \queuedToPlay, { this.startNudged(atBeat) });
 		});
 	}
+
+	// Internal: start a loop whose un-nudged start is atBeat (called at
+	// atBeat), shifted by the channel's nudge: a later nudge delays the
+	// start, an earlier one starts that far into the loop
+	startNudged { |atBeat|
+		var shift = channel.nudgeMs / 1000 * channel.transport.clock.tempo;  // clock.tempo is beats per second
+		var delay = shift.max(0) % loopLengthBeats;
+		var phase = shift.neg.max(0) % loopLengthBeats;
+
+		loopStartBeat = atBeat + delay - phase;
+		nudgeShift = delay - phase;
+
+		if (delay > 0, {
+			if (state != \queuedToPlay, { this.setState(\queuedToPlay) });
+			channel.transport.scheduleAtBeat(atBeat + delay, {
+				// Skip if the slot was stopped/cleared while waiting
+				if (state == \queuedToPlay, { this.startPlayback(phase) });
+			});
+		}, {
+			this.startPlayback(phase);
+		});
+	}
+
+	// Where the loop sits on the beat grid: loopStartBeat without the
+	// channel nudge applied to it (what launch quantization aligns to --
+	// otherwise a clip launched against a nudged one got the nudge twice)
+	gridStartBeat { ^loopStartBeat - nudgeShift }
 
 	// Cancel a queued play before it starts
 	cancelPlay {
 		if (state == \queuedToPlay, { this.setState(\stopped) });
 	}
 
-	// Internal: actually start the playback routine
-	startPlayback {
+	// Internal: move a playing loop by ms milliseconds after its channel's
+	// nudge changed -- its phase (loopStartBeat) shifts and the routine
+	// restarts there, skipping events before that point until the next loop
+	shiftPlaying { |ms|
+		var phase;
+
+		// clock.tempo is beats per second
+		loopStartBeat = loopStartBeat + (ms / 1000 * channel.transport.clock.tempo);
+		nudgeShift = nudgeShift + (ms / 1000 * channel.transport.clock.tempo);
+		phase = (channel.transport.beat - loopStartBeat) % loopLengthBeats;
+
+		this.startPlayback(phase);
+	}
+
+	// Internal: actually start the playback routine, startPhase beats into the loop
+	startPlayback { |startPhase = 0|
 		if (midiEvents.size == 0, {
 			"ClipMIDISlot: Cannot play - no MIDI events".error;
 			^this;
@@ -200,24 +244,29 @@ ClipMIDISlot {
 
 		playRoutine = Routine({
 			var events, length, loopBeat;
+			var phase = startPhase;
 
 			loop {
 				// Snapshot per loop iteration, so a clip rewritten while
 				// playing (loadFromNotation) switches over at the loop boundary
 				events = midiEvents.copy;
 				length = loopLengthBeats;
-				loopBeat = 0;
-				loopStartBeat = channel.transport.beat;
+				loopBeat = phase;
+				loopStartBeat = channel.transport.beat - phase;
 
 				events.do { |event|
-					if (event.time > loopBeat, {
-						(event.time - loopBeat).wait;
-						loopBeat = event.time;
+					// Only the first run after a nudge skips ahead
+					if (event.time >= phase, {
+						if (event.time > loopBeat, {
+							(event.time - loopBeat).wait;
+							loopBeat = event.time;
+						});
+						this.sendEvent(event);
 					});
-					this.sendEvent(event);
 				};
 
 				(length - loopBeat).max(0).wait;
+				phase = 0;
 			};
 		});
 

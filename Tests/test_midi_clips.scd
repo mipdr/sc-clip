@@ -107,6 +107,70 @@ Routine {
 	grid.armSlot(0, 0, 4); grid.launchSlot(0, 0); 0.2.wait; grid.clearSlot(0, 0); 0.8.wait;
 	check.("clear during recording", slot.isEmpty);
 
+	// --- Channel nudge (480 BPM: 1 beat = 125 ms) ---
+	{
+		var onsetsAt = { |frac| var ons = sent.select({ |m| m[0] == \on });
+			ons.notEmpty and: { ons.every({ |m| ((m[4] - frac) % 1).min(1 - ((m[4] - frac) % 1)) < 0.02 }) } };
+		var slot2 = grid.getSlot(0, 2), slot3 = grid.getSlot(0, 3);
+
+		slot.loadFromNotation("c4:1 d4:1 e4:1 f4:1");
+		grid.launchSlot(0, 0);
+		0.6.wait; sent.clear; 0.5.wait;
+		check.("un-nudged onsets on the beat", onsetsAt.(0));
+
+		ch0.nudge(-31.25);  // 0.25 beat earlier
+		0.1.wait; sent.clear; 0.5.wait;
+		check.("playing clip moves with channel nudge", onsetsAt.(0.75));
+		check.("channel nudgeMs", ch0.nudgeMs == -31.25);
+		grid.stopSlot(0, 0); 0.3.wait;
+		check.("notes released on stop", slot.soundingNotes.isEmpty);
+
+		// A clip written after the nudge shares it
+		ch0.loadMIDIClip(2, "g4:1 a4:1", true);
+		grid.launchSlot(0, 2);
+		0.6.wait; sent.clear; 0.5.wait;
+		check.("clip written after nudge is nudged", onsetsAt.(0.75));
+		grid.stopSlot(0, 2); 0.3.wait;
+
+		// Nudging while nothing plays applies to the next launch (delayed start)
+		ch0.nudge(62.5);  // total +0.25 beat
+		grid.launchSlot(0, 2);
+		0.6.wait; sent.clear; 0.5.wait;
+		check.("relaunch after later nudge: onsets 0.25 beat late", onsetsAt.(0.25));
+		grid.stopSlot(0, 2); 0.3.wait;
+
+		// A take recorded on the nudged channel plays back nudged
+		grid.armSlot(0, 3, 2);
+		grid.launchSlot(0, 3);
+		0.2.wait;
+		MIDIIn.doNoteOnAction(1234, 0, 72, 90);
+		0.05.wait;
+		MIDIIn.doNoteOffAction(1234, 0, 72, 0);
+		0.4.wait;
+		check.("recorded take plays", slot3.isPlaying);
+		check.("recorded take plays back nudged",
+			(((slot3.loopStartBeat - slot3.recordStartBeat) % 2) - 0.25).abs < 0.01);
+		grid.stopSlot(0, 3); 0.3.wait;
+
+		check.("other channel un-nudged", grid.getChannel(1).nudgeMs == 0);
+
+		// Switching clips in \longestClip mode, launch registered before the
+		// stop: the new clip is quantized to the nudged clip's grid position,
+		// and must still be nudged only once
+		ch0.nudge(-62.5);  // total -0.25 beat
+		transport.setQuantMode(\longestClip);
+		grid.launchSlot(0, 0);
+		0.6.wait;
+		grid.launchSlot(0, 2);
+		grid.stopSlot(0, 0);
+		sent.clear; 1.wait;
+		{ var ons = sent.select({ |m| m[0] == \on and: { [67, 69].includes(m[2]) } });
+			check.("switch against a nudged clip nudges once",
+				ons.notEmpty and: { ons.every({ |m| ((m[4] % 1) - 0.75).abs < 0.02 }) }) }.value;
+		grid.stopSlot(0, 2); 0.3.wait;
+		transport.setQuantMode(\grid);
+	}.value;
+
 	grid.free;
 	"\n%".format(if (fails == 0) { "ALL TESTS PASSED" } { "% FAILURES".format(fails) }).postln;
 	0.exit;

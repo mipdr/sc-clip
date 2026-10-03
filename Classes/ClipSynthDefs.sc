@@ -58,11 +58,12 @@ ClipSynthDefs {
 	*addPlayerSynths {
 
 		// Clip player: loops audio from buffer
-		SynthDef(\clipPlayer, { |outBus, bufnum, rate=1, loop=1, gate=1, amp=1|
+		SynthDef(\clipPlayer, { |outBus, bufnum, rate=1, loop=1, gate=1, amp=1, startPos=0|
 			var sig = PlayBuf.ar(
 				numChannels: 1,
 				bufnum: bufnum,
 				rate: BufRateScale.kr(bufnum) * rate,
+				startPos: startPos,  // frame to start at (nudge restarts mid-loop)
 				loop: loop,
 				doneAction: Done.freeSelf
 			);

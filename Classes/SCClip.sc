@@ -163,6 +163,15 @@ SCClip {
 		^channel.loadMIDIClip(slotIndex, notationString, padding);
 	}
 
+	// Shift a channel in time by ms milliseconds (positive = later,
+	// negative = earlier), e.g. clip.nudgeChannel(2, -10). Nudges add up and
+	// apply to all the channel's clips, playing now or launched/recorded
+	// later, and are saved with the session.
+	nudgeChannel { |channelIndex, ms|
+		var channel = grid.getChannel(channelIndex);
+		if (channel.notNil, { channel.nudge(ms) });
+	}
+
 	stopChannel { |channelIndex|
 		grid.stopChannel(channelIndex);
 	}
@@ -365,29 +374,36 @@ SCClip {
 	 * - Audio buffers → .wav files via Buffer.write
 	 *
 	 * Directory structure:
-	 * <path>/
+	 * Platform.userAppSupportDir/SC-Clip/<name>/
 	 *   session.scd          # Metadata dictionary
 	 *   channel_0_slot_0.wav # Audio buffers (only for non-empty slots)
 	 *   channel_0_slot_1.wav
 	 *   ...
 	 */
 
-	// Save session to a new location
-	saveAs { |path, action|
-		var sessionDir = PathName(path);
-		var metadataPath = sessionDir.fullPath +/+ "session.scd";
-		var sessionData;
+	// Directory a named session is stored in:
+	// Platform.userAppSupportDir/SC-Clip/<name>
+	*sessionPath { |name|
+		^Platform.userAppSupportDir +/+ "SC-Clip" +/+ name;
+	}
 
-		// Validate path
-		if (path.isNil or: { path.isEmpty }, {
-			"SCClip.saveAs: Invalid path".error;
+	// Save session under a name, e.g. clip.saveAs("MySession")
+	saveAs { |name, action|
+		var path, metadataPath, sessionData;
+
+		// Validate name
+		if (name.isNil or: { name.asString.isEmpty }, {
+			"SCClip.saveAs: Invalid session name".error;
 			^this;
 		});
 
-		// Create directory if it doesn't exist
-		File.mkdir(sessionDir.fullPath);
+		path = SCClip.sessionPath(name.asString);
+		metadataPath = path +/+ "session.scd";
 
-		"SCClip: Saving session to '%'...".format(path).postln;
+		// Create directory if it doesn't exist
+		File.mkdir(path);
+
+		"SCClip: Saving session '%' to '%'...".format(name, path).postln;
 
 		// Collect all session metadata
 		sessionData = this.collectSessionData;
@@ -397,8 +413,8 @@ SCClip {
 		"SCClip: Wrote metadata to '%'".format(metadataPath).postln;
 
 		// Export audio buffers asynchronously
-		this.exportAudioBuffers(sessionDir.fullPath, {
-			"SCClip: Session saved successfully to '%'".format(path).postln;
+		this.exportAudioBuffers(path, {
+			"SCClip: Session '%' saved successfully to '%'".format(name, path).postln;
 			action.value(this);
 		});
 	}
@@ -473,6 +489,7 @@ SCClip {
 			if (channel.isKindOf(ClipMIDIChannel), {
 				Dictionary[
 					\type -> \midi,
+					\nudgeMs -> channel.nudgeMs,
 					\isMuted -> channel.isMuted,
 					\isSoloed -> channel.isSoloed,
 					\slots -> channel.slots.collect(_.asSessionData)
@@ -481,6 +498,7 @@ SCClip {
 				Dictionary[
 					\level -> channel.mixerChannel.level,
 					\pan -> channel.mixerChannel.pan,
+					\nudgeMs -> channel.nudgeMs,
 					\isMuted -> channel.mixerChannel.muted,
 					\isSoloed -> channel.isSoloed,
 					\slots -> channel.slots.collect { |slot, slotIdx|
@@ -556,21 +574,29 @@ SCClip {
 		}.play;
 	}
 
-	// Load session from disk. options: server options to boot with (same as
-	// boot's), if the server isn't running yet.
-	*load { |path, server, action, options, channelConfig, midiOut|
-		var sessionDir = PathName(path);
-		var metadataPath = sessionDir.fullPath +/+ "session.scd";
+	// Load a session saved with saveAs by name, e.g. SCClip.load("MySession").
+	// options: server options to boot with (same as boot's), if the server
+	// isn't running yet.
+	*load { |name, server, action, options, channelConfig, midiOut|
+		var path, metadataPath;
 		var sessionData;
 		var scclip;
 
-		// Validate path
-		if (File.exists(metadataPath).not, {
-			"SCClip.load: Session file not found at '%'".format(metadataPath).error;
+		// Validate name
+		if (name.isNil or: { name.asString.isEmpty }, {
+			"SCClip.load: Invalid session name".error;
 			^nil;
 		});
 
-		"SCClip: Loading session from '%'...".format(path).postln;
+		path = SCClip.sessionPath(name.asString);
+		metadataPath = path +/+ "session.scd";
+
+		if (File.exists(metadataPath).not, {
+			"SCClip.load: Session '%' not found at '%'".format(name, metadataPath).error;
+			^nil;
+		});
+
+		"SCClip: Loading session '%' from '%'...".format(name, path).postln;
 
 		// Read metadata
 		sessionData = Object.readArchive(metadataPath);
@@ -596,7 +622,7 @@ SCClip {
 
 		// Boot and initialize with saved settings
 		scclip.boot(options, {
-			scclip.restoreSessionData(sessionData, sessionDir.fullPath, action);
+			scclip.restoreSessionData(sessionData, path, action);
 		});
 
 		^scclip;
@@ -692,6 +718,7 @@ SCClip {
 				channel.setPan(channelData[\pan]);
 			});
 
+			channel.nudgeMs = channelData[\nudgeMs] ? 0;  // Absent in sessions saved before nudging existed
 			if (channelData[\isMuted], { channel.mute });
 			if (channelData[\isSoloed], { soloedChanIdx = chanIdx });
 		};

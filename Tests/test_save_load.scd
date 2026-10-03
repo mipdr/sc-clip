@@ -18,7 +18,8 @@
  */
 
 (
-var testSessionPath = "/tmp/sc-clip-test-session";
+var testSessionName = "sc-clip-test-session";
+var testSessionPath = SCClip.sessionPath(testSessionName);
 var testPassed = true;
 var failureMessage = nil;
 var clip;
@@ -187,7 +188,7 @@ s.waitForBoot({
 		log.("Saving session to '%'...".format(testSessionPath));
 
 		clip.saveAs(
-			path: testSessionPath,
+			name: testSessionName,
 			action: {
 				log.("Session saved successfully");
 
@@ -230,7 +231,7 @@ s.waitForBoot({
 				log.("Loading session from '%'...".format(testSessionPath));
 
 				clip = SCClip.load(
-					path: testSessionPath,
+					name: testSessionName,
 					server: s,
 					action: {
 						log.("Session loaded successfully");
