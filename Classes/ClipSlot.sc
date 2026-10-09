@@ -19,6 +19,8 @@ ClipSlot {
 	var <slotIndex;
 	var <server;
 	var nudgeShift = 0;  // Beats of channel nudge in loopStartBeat (declared last: newCopyArgs fills vars in order)
+	var <resyncTask;  // Routine for periodic drift correction
+	var <>resyncInterval = 8;  // Resync every N loops (default: 8)
 
 	*new { |channel, slotIndex|
 		^super.newCopyArgs(
@@ -296,60 +298,13 @@ ClipSlot {
 
 	// Internal: actually start the playback synth, startPos frames into the loop
 	startPlayback { |startPos = 0|
-		var outputBus = channel.mixerChannel.inbus;  // ddwMixerChannel input bus
-		var args;
-
-		if (buffer.isNil, {
-			ClipDebugLogger.logError(
-				\slot,
-				"Cannot play slot[%,%] - no buffer".format(channel.channelIndex, slotIndex),
-				"state: %".format(state)
-			);
-			"ClipSlot: Cannot play - no buffer".error;
-			^this;
-		});
-
 		"ClipSlot[%,%]: Starting playback"
 			.format(channel.channelIndex, slotIndex)
 			.postln;
 
-		// Never drop a reference to a running player -- it would keep looping
-		if (playerSynth.notNil, {
-			ClipDebugLogger.logWarning(
-				\slot,
-				"Orphan player detected for slot[%,%]".format(channel.channelIndex, slotIndex),
-				"nodeID: % - freeing before creating new player".format(playerSynth.nodeID)
-			);
-			playerSynth.set(\gate, 0);
-			ClipDebugLogger.logSynthFree(
-				\clipPlayer,
-				channel.channelIndex,
-				slotIndex,
-				playerSynth,
-				"orphan cleanup"
-			);
-		});
+		// Use default 10ms attack for normal playback
+		this.startPlaybackWithAttack(startPos, 0.01);
 
-		args = [
-			\outBus, outputBus,
-			\bufnum, buffer.bufnum,
-			\rate, 1,
-			\loop, 1,
-			\gate, 1,
-			\amp, 1,
-			\startPos, startPos
-		];
-
-		// Create player synth in the looper group
-		playerSynth = Synth(\clipPlayer, args, channel.looperGroup, \addToTail);
-
-		ClipDebugLogger.logSynthCreate(
-			\clipPlayer,
-			channel.channelIndex,
-			slotIndex,
-			playerSynth,
-			args
-		);
 		ClipDebugLogger.logPlayStart(
 			channel.channelIndex,
 			slotIndex,
@@ -387,6 +342,9 @@ ClipSlot {
 
 	// Internal: actually stop the playback synth
 	stopPlayback {
+		// Stop resync task when stopping playback
+		this.stopResyncTask;
+
 		if (playerSynth.notNil, {
 			ClipDebugLogger.logSynthFree(
 				\clipPlayer,
@@ -541,6 +499,142 @@ ClipSlot {
 
 		// Notify channel/grid of state change (for LED updates, etc.)
 		channel.slotStateChanged(slotIndex, newState);
+
+		// Manage resync task based on state changes
+		this.manageResyncTask(newState);
+	}
+
+	// Start or stop resync task based on playback state
+	manageResyncTask { |newState|
+		// Start resync task when entering playing state
+		if (newState == \playing, {
+			this.startResyncTask;
+		});
+
+		// Stop resync task when leaving playing/overdubbing states
+		if ([\stopped, \empty, \queuedToStop].includes(newState), {
+			this.stopResyncTask;
+		});
+	}
+
+	// Start periodic resync task to prevent drift
+	startResyncTask {
+		// Stop any existing task first
+		this.stopResyncTask;
+
+		if (resyncInterval <= 0, {
+			// Resync disabled
+			^this;
+		});
+
+		resyncTask = Routine({
+			loop {
+				// Wait for N loops
+				(loopLengthBeats * resyncInterval).wait;
+
+				// Only resync if still playing or overdubbing
+				if ([\playing, \overdubbing].includes(state), {
+					this.performResync;
+				});
+			};
+		}).play(channel.transport.clock);
+
+		"ClipSlot[%,%]: Resync task started (every % loops)"
+			.format(channel.channelIndex, slotIndex, resyncInterval)
+			.postln;
+	}
+
+	// Stop resync task
+	stopResyncTask {
+		if (resyncTask.notNil, {
+			resyncTask.stop;
+			resyncTask = nil;
+		});
+	}
+
+	// Perform the actual resync operation
+	performResync {
+		var phase, startPos;
+
+		// Calculate current phase in the loop
+		phase = (channel.transport.beat - loopStartBeat) % loopLengthBeats;
+		startPos = this.phaseToFrame(phase);
+
+		"ClipSlot[%,%]: Resyncing to metronome (phase: % beats, frame: %)"
+			.format(channel.channelIndex, slotIndex, phase.round(0.001), startPos)
+			.postln;
+
+		// Restart playback with minimal-attack crossfade to prevent artifacts
+		server.makeBundle(server.latency, {
+			ClipDebugLogger.logSynthFree(
+				\clipPlayer,
+				channel.channelIndex,
+				slotIndex,
+				playerSynth,
+				"drift resync"
+			);
+
+			// Free old synth immediately (no release fade to minimize overlap)
+			playerSynth.free;
+			playerSynth = nil;
+
+			// Start new synth with 1ms attack (vs default 10ms) for minimal overlap
+			this.startPlaybackWithAttack(startPos, 0.001);
+		});
+	}
+
+	// Internal: start playback with custom attack time
+	startPlaybackWithAttack { |startPos = 0, attackTime = 0.01|
+		var outputBus = channel.mixerChannel.inbus;
+		var args;
+
+		if (buffer.isNil, {
+			ClipDebugLogger.logError(
+				\slot,
+				"Cannot play slot[%,%] - no buffer".format(channel.channelIndex, slotIndex),
+				"state: %".format(state)
+			);
+			"ClipSlot: Cannot play - no buffer".error;
+			^this;
+		});
+
+		// Never drop a reference to a running player
+		if (playerSynth.notNil, {
+			ClipDebugLogger.logWarning(
+				\slot,
+				"Orphan player detected for slot[%,%]".format(channel.channelIndex, slotIndex),
+				"nodeID: % - freeing before creating new player".format(playerSynth.nodeID)
+			);
+			playerSynth.set(\gate, 0);
+			ClipDebugLogger.logSynthFree(
+				\clipPlayer,
+				channel.channelIndex,
+				slotIndex,
+				playerSynth,
+				"orphan cleanup"
+			);
+		});
+
+		args = [
+			\outBus, outputBus,
+			\bufnum, buffer.bufnum,
+			\rate, 1,
+			\loop, 1,
+			\gate, 1,
+			\amp, 1,
+			\startPos, startPos,
+			\attackTime, attackTime
+		];
+
+		playerSynth = Synth(\clipPlayer, args, channel.looperGroup, \addToTail);
+
+		ClipDebugLogger.logSynthCreate(
+			\clipPlayer,
+			channel.channelIndex,
+			slotIndex,
+			playerSynth,
+			args
+		);
 	}
 
 	// Query methods
