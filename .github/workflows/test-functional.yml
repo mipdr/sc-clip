@@ -84,7 +84,7 @@ jobs:
           export QT_QPA_PLATFORM=offscreen
           export QTWEBENGINE_DISABLE_SANDBOX=1
           export DISPLAY=:99
-          timeout 60 sclang -D scripts/test-compile.scd || {
+          timeout 60 sclang -l /root/.config/SuperCollider/sclang_conf.yaml -D scripts/test-compile.scd || {
             echo "ERROR: Class compilation failed"
             exit 1
           }
@@ -97,7 +97,7 @@ jobs:
           export QT_QPA_PLATFORM=offscreen
           export QTWEBENGINE_DISABLE_SANDBOX=1
           # Execute script via load() then the interpreter will quit after the script exits
-          echo "\"$(pwd)/Tests/test_save_load_simple.scd\".load;" | timeout 60 sclang
+          echo "\"$(pwd)/Tests/test_save_load_simple.scd\".load;" | timeout 60 sclang -l /root/.config/SuperCollider/sclang_conf.yaml
           TEST_EXIT=$?
           if [ $TEST_EXIT -eq 0 ]; then
             echo ""
@@ -120,7 +120,7 @@ jobs:
         run: |
           export QT_QPA_PLATFORM=offscreen
           export QTWEBENGINE_DISABLE_SANDBOX=1
-          echo "\"$(pwd)/Tests/test_midi_clips.scd\".load;" | timeout 60 sclang
+          echo "\"$(pwd)/Tests/test_midi_clips.scd\".load;" | timeout 60 sclang -l /root/.config/SuperCollider/sclang_conf.yaml
           TEST_EXIT=$?
           if [ $TEST_EXIT -eq 124 ]; then echo "ERROR: MIDI tests TIMED OUT"; exit 1; fi
           exit $TEST_EXIT
