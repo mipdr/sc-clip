@@ -73,8 +73,13 @@ jobs:
           echo "sc-clip classes:"
           ls -la /root/.local/share/SuperCollider/Extensions/sc-clip/Classes/ | head -5
           echo ""
-          echo "Checking sclang configuration paths:"
-          sclang -D -e "Platform.userExtensionDir.postln; 0.exit" 2>&1 || true
+          echo "Checking sclang config file:"
+          if [ -f /root/.config/SuperCollider/sclang_conf.yaml ]; then
+            echo "Config file exists:"
+            cat /root/.config/SuperCollider/sclang_conf.yaml
+          else
+            echo "WARNING: Config file does not exist!"
+          fi
           echo ""
           export QT_QPA_PLATFORM=offscreen
           export QTWEBENGINE_DISABLE_SANDBOX=1
