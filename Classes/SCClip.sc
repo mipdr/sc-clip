@@ -537,6 +537,15 @@ SCClip {
 					\isMuted -> channel.mixerChannel.muted,
 					\isSoloed -> channel.isSoloed,
 					\hardwareInputIndex -> channel.hardwareInputIndex,  // Save input mapping
+					\effects -> [0, 1, 2].collect { |slotIdx|  // Save effect chains
+						var effectName = channel.getEffectName(slotIdx);
+						if (effectName.notNil, {
+							var mainValue = channel.getEffectMainValue(slotIdx);
+							(name: effectName, mainValue: mainValue)
+						}, {
+							nil
+						});
+					},
 					\slots -> channel.slots.collect { |slot, slotIdx|
 						if (slot.hasAudio, {
 							Dictionary[
@@ -773,6 +782,36 @@ SCClip {
 				// Restore input mapping if saved
 				if (channelData[\hardwareInputIndex].notNil, {
 					channel.setHardwareInput(channelData[\hardwareInputIndex]);
+				});
+
+				// Restore effect chains if saved
+				if (channelData[\effects].notNil, {
+					channelData[\effects].do { |effectData, slotIdx|
+						if (effectData.notNil, {
+							var meta = ClipEffectRegistry.get(effectData[\name]);
+							if (meta.notNil, {
+								var defaultArgs = [];
+
+								// Build args from parameter specs
+								meta[\parameters].keysValuesDo { |param, spec|
+									var value = spec.default;
+									// If this is the main control and we saved a value, use it
+									if (param == meta[\mainControl] and: { effectData[\mainValue].notNil }, {
+										value = effectData[\mainValue];
+									});
+									defaultArgs = defaultArgs ++ [param, value];
+								};
+
+								channel.addEffect(effectData[\name], defaultArgs, slotIdx);
+
+								"SCClip: Restored effect % at channel %, slot %".format(
+									effectData[\name], chanIdx, slotIdx).postln;
+							}, {
+								"SCClip: Effect % not found in registry, skipping".format(
+									effectData[\name]).warn;
+							});
+						});
+					};
 				});
 			});
 
