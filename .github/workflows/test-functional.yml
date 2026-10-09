@@ -27,9 +27,16 @@ jobs:
           echo "========================================"
           SC_EXTENSIONS_DIR="/root/.local/share/SuperCollider/Extensions"
           mkdir -p "$SC_EXTENSIONS_DIR"
-          cp -r "$GITHUB_WORKSPACE" "$SC_EXTENSIONS_DIR/sc-clip"
+
+          # Copy only the Classes directory (not the whole repo with .git, tests, etc.)
+          mkdir -p "$SC_EXTENSIONS_DIR/sc-clip"
+          cp -r "$GITHUB_WORKSPACE/Classes" "$SC_EXTENSIONS_DIR/sc-clip/"
+          cp -r "$GITHUB_WORKSPACE/HelpSource" "$SC_EXTENSIONS_DIR/sc-clip/" 2>/dev/null || true
+
           echo "OK sc-clip classes installed to $SC_EXTENSIONS_DIR/sc-clip"
-          ls -la "$SC_EXTENSIONS_DIR/sc-clip/Classes/" | head -10
+          echo ""
+          echo "Installed .sc files:"
+          find "$SC_EXTENSIONS_DIR/sc-clip" -name "*.sc" | head -10
 
       - name: Start JACK server
         run: |
@@ -59,8 +66,19 @@ jobs:
           echo "========================================"
           echo "Verifying SC classes compile"
           echo "========================================"
+          echo ""
+          echo "Extensions directory contents:"
+          ls -la /root/.local/share/SuperCollider/Extensions/
+          echo ""
+          echo "sc-clip classes:"
+          ls -la /root/.local/share/SuperCollider/Extensions/sc-clip/Classes/ | head -5
+          echo ""
+          echo "Checking sclang configuration paths:"
+          sclang -D -e "Platform.userExtensionDir.postln; 0.exit" 2>&1 || true
+          echo ""
           export QT_QPA_PLATFORM=offscreen
           export QTWEBENGINE_DISABLE_SANDBOX=1
+          export DISPLAY=:99
           timeout 60 sclang -D scripts/test-compile.scd || {
             echo "ERROR: Class compilation failed"
             exit 1
