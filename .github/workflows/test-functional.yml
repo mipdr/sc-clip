@@ -84,8 +84,9 @@ jobs:
           export QT_QPA_PLATFORM=offscreen
           export QTWEBENGINE_DISABLE_SANDBOX=1
           export DISPLAY=:99
-          timeout 60 sclang -l /root/.config/SuperCollider/sclang_conf.yaml -D scripts/test-compile.scd || {
-            echo "ERROR: Class compilation failed"
+          echo "Running simple class loading test..."
+          timeout 30 sclang -l /root/.config/SuperCollider/sclang_conf.yaml scripts/test-simple.scd || {
+            echo "ERROR: Class loading test failed"
             exit 1
           }
 
