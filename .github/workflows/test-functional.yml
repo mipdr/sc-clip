@@ -66,25 +66,9 @@ jobs:
           echo "========================================"
           echo "Verifying SC classes compile"
           echo "========================================"
-          echo ""
-          echo "Extensions directory contents:"
-          ls -la /root/.local/share/SuperCollider/Extensions/
-          echo ""
-          echo "sc-clip classes:"
-          ls -la /root/.local/share/SuperCollider/Extensions/sc-clip/Classes/ | head -5
-          echo ""
-          echo "Checking sclang config file:"
-          if [ -f /root/.config/SuperCollider/sclang_conf.yaml ]; then
-            echo "Config file exists:"
-            cat /root/.config/SuperCollider/sclang_conf.yaml
-          else
-            echo "WARNING: Config file does not exist!"
-          fi
-          echo ""
           export QT_QPA_PLATFORM=offscreen
           export QTWEBENGINE_DISABLE_SANDBOX=1
           export DISPLAY=:99
-          echo "Running simple class loading test..."
           timeout 30 sclang -l /root/.config/SuperCollider/sclang_conf.yaml scripts/test-simple.scd || {
             echo "ERROR: Class loading test failed"
             exit 1
