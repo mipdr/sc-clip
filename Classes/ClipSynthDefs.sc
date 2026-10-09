@@ -58,7 +58,9 @@ ClipSynthDefs {
 	*addPlayerSynths {
 
 		// Clip player: loops audio from buffer
-		SynthDef(\clipPlayer, { |outBus, bufnum, rate=1, loop=1, gate=1, amp=1, startPos=0|
+		// attackTime parameter allows instant attack for drift resync (0.001) or
+		// normal smooth start (0.01, default)
+		SynthDef(\clipPlayer, { |outBus, bufnum, rate=1, loop=1, gate=1, amp=1, startPos=0, attackTime=0.01|
 			var sig = PlayBuf.ar(
 				numChannels: 1,
 				bufnum: bufnum,
@@ -70,7 +72,7 @@ ClipSynthDefs {
 
 			// Envelope for smooth start/stop
 			sig = sig * EnvGen.kr(
-				Env.asr(attackTime: 0.01, sustainLevel: 1, releaseTime: 0.05),
+				Env.asr(attackTime: attackTime, sustainLevel: 1, releaseTime: 0.05),
 				gate: gate,
 				doneAction: Done.freeSelf
 			);
