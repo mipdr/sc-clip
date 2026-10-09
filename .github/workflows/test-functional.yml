@@ -60,6 +60,7 @@ jobs:
           echo "Verifying SC classes compile"
           echo "========================================"
           export QT_QPA_PLATFORM=offscreen
+          export QTWEBENGINE_DISABLE_SANDBOX=1
           timeout 60 sclang -D scripts/test-compile.scd || {
             echo "ERROR: Class compilation failed"
             exit 1
@@ -71,6 +72,7 @@ jobs:
           echo "Running save/load metadata tests"
           echo "========================================"
           export QT_QPA_PLATFORM=offscreen
+          export QTWEBENGINE_DISABLE_SANDBOX=1
           # Execute script via load() then the interpreter will quit after the script exits
           echo "\"$(pwd)/Tests/test_save_load_simple.scd\".load;" | timeout 60 sclang
           TEST_EXIT=$?
@@ -94,6 +96,7 @@ jobs:
       - name: Run MIDI clip tests
         run: |
           export QT_QPA_PLATFORM=offscreen
+          export QTWEBENGINE_DISABLE_SANDBOX=1
           echo "\"$(pwd)/Tests/test_midi_clips.scd\".load;" | timeout 60 sclang
           TEST_EXIT=$?
           if [ $TEST_EXIT -eq 124 ]; then echo "ERROR: MIDI tests TIMED OUT"; exit 1; fi
