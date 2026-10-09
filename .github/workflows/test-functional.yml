@@ -9,87 +9,27 @@ on:
 jobs:
   test-save-load:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 10  # Reduced from 30 since we skip installation
+
+    # Use pre-built Docker image with all dependencies
+    container:
+      image: ghcr.io/mipdr/sc-clip-tests-docker:latest
+      options: --user root
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install SuperCollider and dependencies
-        run: |
-          echo "========================================"
-          echo "Installing SuperCollider and dependencies"
-          echo "========================================"
-          sudo apt-get update
-          sudo apt-get install -y \
-            software-properties-common \
-            wget \
-            unzip \
-            xvfb \
-            jackd2 \
-            libjack-jackd2-0 \
-            libsndfile1 \
-            libfftw3-3 \
-            libxt6 \
-            libavahi-client3 \
-            libasound2
-          # Install SC - need language package for sclang
-          sudo apt-get install -y \
-            supercollider-language \
-            supercollider-server \
-            supercollider-common \
-            supercollider-supernova || {
-            echo "Ubuntu package install failed, continuing anyway..."
-          }
-          # Check common SC install locations
-          if [ -f "/usr/bin/sclang" ]; then
-            echo "OK Found sclang at /usr/bin/sclang"
-            /usr/bin/sclang -v 2>&1 | head -5 || true
-          elif [ -f "/usr/local/bin/sclang" ]; then
-            echo "OK Found sclang at /usr/local/bin/sclang"
-            /usr/local/bin/sclang -v 2>&1 | head -5 || true
-          else
-            echo "ERROR: sclang not found in expected locations"
-            echo "Checking dpkg for installed SC packages:"
-            dpkg -l | grep supercollider || true
-            echo "Looking for sclang (may take a while):"
-            find /usr -name "sclang" 2>/dev/null | head -5 || echo "Not found"
-            exit 1
-          fi
 
       - name: Install sc-clip to Extensions directory
         run: |
           echo "========================================"
           echo "Installing sc-clip classes"
           echo "========================================"
-          SC_EXTENSIONS_DIR="$HOME/.local/share/SuperCollider/Extensions"
+          SC_EXTENSIONS_DIR="/root/.local/share/SuperCollider/Extensions"
           mkdir -p "$SC_EXTENSIONS_DIR"
           cp -r "$GITHUB_WORKSPACE" "$SC_EXTENSIONS_DIR/sc-clip"
           echo "OK sc-clip classes installed to $SC_EXTENSIONS_DIR/sc-clip"
           ls -la "$SC_EXTENSIONS_DIR/sc-clip/Classes/" | head -10
-
-      - name: Install ddwMixerChannel quark
-        run: |
-          echo "========================================"
-          echo "Installing ddwMixerChannel quark"
-          echo "========================================"
-          export QT_QPA_PLATFORM=offscreen
-          timeout 120 sclang -D scripts/ci-install-quarks.scd || {
-            echo "WARNING: Quark installation had issues, but continuing..."
-          }
-
-          echo "========================================"
-          echo "Removing GUI-dependent extensions"
-          echo "========================================"
-          # Remove Document extensions that don't work in headless mode
-          QUARKS_DIR="$HOME/.local/share/SuperCollider/downloaded-quarks"
-          if [ -f "$QUARKS_DIR/ddwGUIEnhancements/Document-scanFor.sc" ]; then
-            echo "Removing $QUARKS_DIR/ddwGUIEnhancements/Document-scanFor.sc"
-            rm "$QUARKS_DIR/ddwGUIEnhancements/Document-scanFor.sc"
-            echo "OK Removed GUI-dependent Document extensions"
-          else
-            echo "INFO: Document-scanFor.sc not found, skipping removal"
-          fi
 
       - name: Start JACK server
         run: |
