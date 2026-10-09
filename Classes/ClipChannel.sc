@@ -295,14 +295,16 @@ ClipChannel {
 
 	// Live-update a running effect's parameter (e.g. from a MIDI CC handler)
 	setEffectParam { |slot, param, value|
-		var running = effects[slot];
+		var running, effectName, mainParam;
+
+		running = effects[slot];
 		if (running.notNil, {
 			running.set(param, value);
 
 			// If this is the main control, track it
-			var effectName = effectNames[slot];
+			effectName = effectNames[slot];
 			if (effectName.notNil, {
-				var mainParam = ClipEffectRegistry.getMainControl(effectName);
+				mainParam = ClipEffectRegistry.getMainControl(effectName);
 				if (param == mainParam, {
 					effectMainValues[slot] = value;
 				});
@@ -314,13 +316,15 @@ ClipChannel {
 
 	// NEW: Set effect's main control (for MIDI knob)
 	setEffectMainControl { |slot, value|
-		var effectName = effectNames[slot];
+		var effectName, mainParam;
+
+		effectName = effectNames[slot];
 		if (effectName.isNil, {
 			"ClipChannel[%]: No effect at slot %".format(channelIndex, slot).warn;
 			^this;
 		});
 
-		var mainParam = ClipEffectRegistry.getMainControl(effectName);
+		mainParam = ClipEffectRegistry.getMainControl(effectName);
 		if (mainParam.isNil, {
 			"ClipChannel[%]: Effect % has no main control".format(
 				channelIndex, effectName).warn;
