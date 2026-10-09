@@ -259,17 +259,19 @@ ClipChannel {
 	// "the effect in slot N" without holding onto the Synth themselves.
 
 	addEffect { |synthDef, args, slot = 0|
+		var meta, mainParam, spec, argIndex, value;
+
 		if (effects[slot].notNil, { this.removeEffect(slot) });
 		effects[slot] = mixerChannel.playfx(synthDef, args);
 		effectNames[slot] = synthDef;
 
 		// Initialize main control value from args or default
-		var meta = ClipEffectRegistry.get(synthDef);
-		var mainParam = meta !? { meta[\mainControl] };
+		meta = ClipEffectRegistry.get(synthDef);
+		mainParam = meta !? { meta[\mainControl] };
 		if (mainParam.notNil, {
-			var spec = meta[\parameters][mainParam];
-			var argIndex = args.indexOf(mainParam);
-			var value = if (argIndex.notNil, {
+			spec = meta[\parameters][mainParam];
+			argIndex = args.indexOf(mainParam);
+			value = if (argIndex.notNil, {
 				args[argIndex + 1];
 			}, {
 				spec.default;
